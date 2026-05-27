@@ -1,0 +1,543 @@
+// Prisma schema — Coworking ERP (PATCH v2: cabins, employee directory, vendor invoice OCR, blacklist, half-price seats)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============= USERS & AUTH =============
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  role          String   // ADMIN | OWNER | MANAGER | SALES | OPS | CENTER_MANAGER | ACCOUNTS | IT | CLIENT
+  centerId      String?
+  center        Center?  @relation(fields: [centerId], references: [id])
+
+  // CLIENT users — link to employer Client (for employee directory)
+  employerClientId String?
+  employerClient   Client?  @relation("ClientEmployees", fields: [employerClientId], references: [id])
+  aadhaar          String?
+  pan              String?
+  designation      String?
+
+  phone         String?
+  active        Boolean  @default(true)
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  leadsOwned        Lead[]        @relation("LeadOwner")
+  proposalsCreated  Proposal[]    @relation("ProposalCreator")
+  proposalsApproved Proposal[]    @relation("ProposalApprover")
+  prsRaised         PurchaseRequest[]
+  posIssued         PurchaseOrder[]
+  comments          Comment[]
+  attendance        AttendanceLog[]
+  tickets           Ticket[]
+  bookings          Booking[]
+  picOf             Client[]       @relation("ClientPIC")
+}
+
+// ============= CENTERS =============
+model Center {
+  id                String   @id @default(cuid())
+  name              String
+  city              String
+  address           String?
+  totalSeats        Int      @default(0)
+  mapImagePath      String?  // digital floor map
+  commonAreaPhotos  String?  // JSON array of file paths
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  users         User[]
+  leads         Lead[]
+  visitors      Visitor[]
+  proposals     Proposal[]
+  clients       Client[]
+  prs           PurchaseRequest[]
+  pos           PurchaseOrder[]
+  inventory     InventoryItem[]
+  assets        Asset[]
+  repairs       Repair[]
+  bookings      Booking[]
+  meetingRooms  MeetingRoom[]
+  notices       Notice[]
+  attendance    AttendanceLog[]
+  expenses      Expense[]
+  invoices      ClientInvoice[]
+  cabins        Cabin[]
+  seats         Seat[]
+}
+
+// ============= CABINS (NEW) =============
+// A center is divided into cabins (e.g., 6-seater) + open seats. The seat map renders these.
+model Cabin {
+  id          String   @id @default(cuid())
+  centerId    String
+  center      Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  name        String   // e.g., "Cabin A1"
+  capacity    Int      // seats inside the cabin
+  photos      String?  // JSON array of file paths
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  seats       Seat[]
+  proposals   Proposal[]
+  clients     Client[]
+}
+
+// ============= CRM: LEADS =============
+model Lead {
+  id            String    @id @default(cuid())
+  source        String
+  name          String
+  email         String?
+  phone         String?
+  company       String?
+  seatsNeeded   Int?
+  budget        Float?
+  notes         String?
+  status        String    @default("NEW")
+  ownerId       String?
+  owner         User?     @relation("LeadOwner", fields: [ownerId], references: [id])
+  centerId      String?
+  center        Center?   @relation(fields: [centerId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  comments      Comment[]
+  visitors      Visitor[]
+  proposals     Proposal[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  body      String
+  channel   String
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// ============= VISITORS / KYC =============
+model Visitor {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String?
+  email         String?
+  aadhaar       String?
+  pan           String?
+  kycVerified   Boolean  @default(false)
+  digilockerRef String?
+  tourTaken     Boolean  @default(false)
+  tourDate      DateTime?
+  leadId        String?
+  lead          Lead?    @relation(fields: [leadId], references: [id])
+  centerId      String?
+  center        Center?  @relation(fields: [centerId], references: [id])
+  notes         String?
+  createdAt     DateTime @default(now())
+}
+
+// ============= PROPOSALS =============
+model Proposal {
+  id              String   @id @default(cuid())
+  leadId          String?
+  lead            Lead?    @relation(fields: [leadId], references: [id])
+  centerId        String
+  center          Center   @relation(fields: [centerId], references: [id])
+  cabinId         String?
+  cabin           Cabin?   @relation(fields: [cabinId], references: [id])
+  seats           Int
+  rentPerSeat     Float
+  securityDeposit Float
+  lockInMonths    Int
+  customisations  String?
+  imagesJson      String?  // auto-populated from cabin + center common area on send
+  status          String   @default("DRAFT")
+  belowThreshold  Boolean  @default(false)
+  approverNotes   String?
+  createdById     String
+  createdBy       User     @relation("ProposalCreator", fields: [createdById], references: [id])
+  approvedById    String?
+  approvedBy      User?    @relation("ProposalApprover", fields: [approvedById], references: [id])
+  sentAt          DateTime?
+  acceptedAt      DateTime?
+  acceptanceFile  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  client          Client?
+}
+
+// ============= CLIENTS / ONBOARDING / CONTRACTS =============
+model Client {
+  id                String    @id @default(cuid())
+  companyName       String
+  contactName       String
+  email             String
+  phone             String?
+  centerId          String
+  center            Center    @relation(fields: [centerId], references: [id])
+  cabinId           String?
+  cabin             Cabin?    @relation(fields: [cabinId], references: [id])
+  proposalId        String?   @unique
+  proposal          Proposal? @relation(fields: [proposalId], references: [id])
+  startDate         DateTime?
+  specialAgreement  String?
+  sentToOps         Boolean   @default(false)
+  cmConfirmed       Boolean   @default(false)
+  clientConfirmed   Boolean   @default(false)
+  active            Boolean   @default(true)
+  occupiedSeats     Int       @default(0)   // how many seats client is actually using
+  totalCabinSeats   Int       @default(0)   // capacity of cabin/center taken
+  unusedSeatReminderSent Boolean @default(false)
+  unusedSeatLastReminderAt DateTime?
+  picUserId         String?                  // Person In Charge (User.id)
+  pic               User?     @relation("ClientPIC", fields: [picUserId], references: [id])
+  createdAt         DateTime  @default(now())
+
+  contract          Contract?
+  invoices          ClientInvoice[]
+  tickets           Ticket[]
+  feedback          Feedback[]
+  bookings          Booking[]
+  referralsMade     Referral[] @relation("ReferralMadeBy")
+  referralsReceived Referral[] @relation("ReferralFor")
+  employees         User[]     @relation("ClientEmployees")
+}
+
+model Contract {
+  id              String   @id @default(cuid())
+  clientId        String   @unique
+  client          Client   @relation(fields: [clientId], references: [id])
+  startDate       DateTime
+  endDate         DateTime?
+  monthlyRent     Float
+  securityDeposit Float
+  incrementPct    Float
+  revisionDate    DateTime
+  reminderSent    Boolean  @default(false)
+  filePath        String?  // uploaded existing contract
+  ocrParsedJson   String?  // OCR result (renew date, terms etc.)
+  createdAt       DateTime @default(now())
+}
+
+// ============= VENDORS / PROCUREMENT =============
+model Vendor {
+  id            String   @id @default(cuid())
+  name          String
+  category      String
+  contact       String?
+  email         String?
+  phone         String?
+  gstin         String?
+  panNumber     String?
+  bankDetails   String?
+  active        Boolean  @default(true)
+  blacklisted   Boolean  @default(false)
+  blacklistRemarks String?
+  deletedAt     DateTime?
+  rateCardJson  String?
+  createdAt     DateTime @default(now())
+
+  pos          PurchaseOrder[]
+  invoices     VendorInvoice[]
+}
+
+model PurchaseRequest {
+  id          String   @id @default(cuid())
+  centerId    String
+  center      Center   @relation(fields: [centerId], references: [id])
+  raisedById  String
+  raisedBy    User     @relation(fields: [raisedById], references: [id])
+  itemsJson   String
+  reason      String
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+
+  pos         PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id              String   @id @default(cuid())
+  poNumber        String   @unique @default(cuid())
+  prId            String?
+  pr              PurchaseRequest? @relation(fields: [prId], references: [id])
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  centerId        String
+  center          Center   @relation(fields: [centerId], references: [id])
+  issuedById      String
+  issuedBy        User     @relation(fields: [issuedById], references: [id])
+  itemsJson       String
+  totalAmount     Float
+  isRecurring     Boolean  @default(false)
+  recurrence      String?
+  category        String
+  piFile          String?
+  invoiceFile     String?
+  paymentStatus   String   @default("UNPAID")
+  deliveryConfirmed Boolean @default(false)
+  deliveryNotes   String?
+  deliveryPhotos  String?
+  createdAt       DateTime @default(now())
+
+  vendorInvoices  VendorInvoice[]
+}
+
+// ============= VENDOR INVOICES (NEW — upload, OCR, PO match, approve) =============
+model VendorInvoice {
+  id           String   @id @default(cuid())
+  vendorId     String
+  vendor       Vendor   @relation(fields: [vendorId], references: [id])
+  poId         String?
+  po           PurchaseOrder? @relation(fields: [poId], references: [id])
+  filePath     String   // uploaded invoice
+  ocrJson      String?  // OCR-parsed fields (invoice no, amount, gst, date, po ref)
+  invoiceNo    String?
+  invoiceDate  DateTime?
+  amount       Float    @default(0)
+  gst          Float    @default(0)
+  poMatchStatus String  @default("UNMATCHED") // UNMATCHED | MATCHED | MISMATCH
+  status       String   @default("PENDING")    // PENDING | APPROVED | REJECTED | BOOKED
+  approvedById String?
+  remarks      String?
+  createdAt    DateTime @default(now())
+}
+
+// ============= INVENTORY & ASSETS =============
+model InventoryItem {
+  id            String   @id @default(cuid())
+  centerId      String
+  center        Center   @relation(fields: [centerId], references: [id])
+  name          String
+  category      String
+  unit          String
+  currentStock Float    @default(0)
+  threshold     Float    @default(0)
+  consumptionLog String?
+  updatedAt     DateTime @updatedAt
+}
+
+model Asset {
+  id          String   @id @default(cuid())
+  centerId    String
+  center      Center   @relation(fields: [centerId], references: [id])
+  name        String
+  category    String
+  serialNo    String?
+  location    String?
+  purchaseDate DateTime?
+  cost        Float?
+  status      String   @default("OK")
+  createdAt   DateTime @default(now())
+}
+
+// ============= REPAIRS =============
+model RepairCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Repair {
+  id          String   @id @default(cuid())
+  centerId    String
+  center      Center   @relation(fields: [centerId], references: [id])
+  category    String
+  description String
+  reportedBy  String?
+  assignedTo  String
+  vendorId    String?
+  cost        Float?
+  status      String   @default("OPEN")
+  photos      String?
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+}
+
+// ============= MEETING ROOMS / BOOKINGS =============
+model MeetingRoom {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id])
+  name      String
+  capacity  Int
+  hourlyRate Float   @default(0)
+  active    Boolean  @default(true)
+
+  bookings  Booking[]
+}
+
+model Booking {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      MeetingRoom @relation(fields: [roomId], references: [id])
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id])
+  bookedById String
+  bookedBy  User     @relation(fields: [bookedById], references: [id])
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
+  startTime DateTime
+  endTime   DateTime
+  durationHrs Float    @default(0)
+  isChargeable Boolean @default(false)   // true if this booking is past quota
+  chargedAmount Float  @default(0)
+  notes     String?
+  status    String   @default("CONFIRMED")
+  createdAt DateTime @default(now())
+}
+
+// ============= CLIENT INVOICES =============
+model ClientInvoice {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+  centerId     String
+  center       Center   @relation(fields: [centerId], references: [id])
+  invoiceNo    String   @unique
+  periodStart  DateTime
+  periodEnd    DateTime
+  baseAmount   Float
+  halfPriceLine Float   @default(0)   // unused-seat half-price portion
+  meetingRoomLine Float @default(0)   // overage charges
+  gstAmount    Float    @default(0)
+  totalAmount  Float
+  status       String   @default("ISSUED")
+  issuedAt     DateTime @default(now())
+  paidAt       DateTime?
+  emailSent    Boolean  @default(false)
+}
+
+// ============= CLIENT PORTAL =============
+model Ticket {
+  id        String   @id @default(cuid())
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
+  raisedById String?
+  raisedBy  User?    @relation(fields: [raisedById], references: [id])
+  category  String
+  subject   String
+  body      String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  clientId  String?
+  client    Client?  @relation(fields: [clientId], references: [id])
+  rating    Int
+  body      String?
+  createdAt DateTime @default(now())
+}
+
+model Notice {
+  id        String   @id @default(cuid())
+  centerId  String?
+  center    Center?  @relation(fields: [centerId], references: [id])
+  title     String
+  body      String
+  isAd      Boolean  @default(false)
+  brand     String?
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  createdAt DateTime @default(now())
+}
+
+// ============= REFERRALS =============
+model Referral {
+  id            String   @id @default(cuid())
+  referrerType  String
+  referrerId    String?
+  referrer      Client?  @relation("ReferralMadeBy", fields: [referrerId], references: [id])
+  referrerName  String
+  contact       String?
+  prospectName  String
+  prospectPhone String?
+  converted     Boolean  @default(false)
+  convertedClientId String?
+  convertedClient Client? @relation("ReferralFor", fields: [convertedClientId], references: [id])
+  feeAmount     Float    @default(0)
+  feePaid       Boolean  @default(false)
+  notes         String?
+  createdAt     DateTime @default(now())
+}
+
+// ============= ACCOUNTS / EXPENSES / LEDGER =============
+model Expense {
+  id        String   @id @default(cuid())
+  centerId  String?
+  center    Center?  @relation(fields: [centerId], references: [id])
+  category  String
+  amount    Float
+  gst       Float    @default(0)
+  tds       Float    @default(0)
+  payee     String
+  paymentMode String
+  date      DateTime @default(now())
+  notes     String?
+  attachment String?
+}
+
+model LedgerEntry {
+  id        String   @id @default(cuid())
+  account   String
+  debit     Float    @default(0)
+  credit    Float    @default(0)
+  refType   String
+  refId     String?
+  centerId  String?
+  date      DateTime @default(now())
+  narration String?
+}
+
+// ============= ATTENDANCE & SOPs =============
+model AttendanceLog {
+  id          String   @id @default(cuid())
+  centerId    String
+  center      Center   @relation(fields: [centerId], references: [id])
+  reportedById String
+  reportedBy  User     @relation(fields: [reportedById], references: [id])
+  date        DateTime @default(now())
+  cleanliness String
+  issuesNote  String?
+  photos      String?
+}
+
+model Sop {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  category  String
+  fileUrl   String?
+  createdAt DateTime @default(now())
+}
+
+// ============= SEAT MAP =============
+model Seat {
+  id            String   @id @default(cuid())
+  centerId      String
+  center        Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  cabinId       String?
+  cabin         Cabin?   @relation(fields: [cabinId], references: [id])
+  number        String
+  zone          String?
+  assignedClientId String?
+  occupied      Boolean  @default(false)
+  partialOccupancy Boolean @default(false)  // true = orange (client took cabin but not this seat)
+  createdAt     DateTime @default(now())
+
+  @@unique([centerId, number])
+}

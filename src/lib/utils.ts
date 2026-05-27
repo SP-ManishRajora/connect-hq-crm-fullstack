@@ -1,0 +1,29 @@
+export const RATE_THRESHOLD = 8000; // INR per seat — below this needs Manager approval
+export const GST_RATE = 0.18;
+
+export function fmtINR(n: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(n || 0);
+}
+
+export function fmtDate(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function nextInvoiceNo(prefix = "INV") {
+  return `${prefix}-${Date.now()}`;
+}
+
+export async function sendMail(to: string, subject: string, body: string) {
+  // Stub — replace with nodemailer or transactional provider
+  console.log(`\n📧 [EMAIL] To: ${to}\nSubject: ${subject}\n${body}\n`);
+}

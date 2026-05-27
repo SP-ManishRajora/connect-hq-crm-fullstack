@@ -1,0 +1,18 @@
+node_modules
+.next
+out
+dist
+.env
+.env.local
+*.log
+prisma/dev.db
+prisma/dev.db-journal
+.DS_Store
+
+# internal notes / local artifacts
+CHANGES.md
+PATCH_INSTRUCTIONS.txt
+deploymentSteps.md
+serverSetting.txt
+patch/
+
