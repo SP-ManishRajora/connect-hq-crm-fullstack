@@ -11,6 +11,7 @@ datasource db {
 // ============= USERS & AUTH =============
 model User {
   id            String   @id @default(cuid())
+  emp_id        String?  @unique
   email         String   @unique
   name          String
   passwordHash  String
