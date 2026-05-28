@@ -3,10 +3,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtINR } from "@/lib/utils";
 
-export default function BookingsClient({ bookings, rooms, quota }: any) {
+const EMPTY_ROOM = { centerId: "", name: "", capacity: "", hourlyRate: "" };
+
+export default function BookingsClient({ bookings, rooms, centers, quota }: any) {
   const router = useRouter();
   const [show, setShow] = useState(false);
+  const [showAddRoom, setShowAddRoom] = useState(false);
   const [b, setB] = useState<any>({ roomId: "", startTime: "", endTime: "", notes: "" });
+  const [room, setRoom] = useState<any>(EMPTY_ROOM);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -14,12 +18,47 @@ export default function BookingsClient({ bookings, rooms, quota }: any) {
     if (r.ok) { setShow(false); router.refresh(); } else { const j = await r.json(); alert(j.error || "Failed"); }
   }
 
+  async function submitRoom(e: React.FormEvent) {
+    e.preventDefault();
+    const r = await fetch("/api/meeting-rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(room) });
+    if (r.ok) { setShowAddRoom(false); setRoom(EMPTY_ROOM); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed"); }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="h1">Meeting Room Bookings</h1>
-        <button className="btn-primary" onClick={() => setShow(!show)}>+ Book Room</button>
+        <div className="flex gap-2">
+          <button type="button" className="btn-ghost" onClick={() => setShowAddRoom(!showAddRoom)}>+ Add Room</button>
+          <button type="button" className="btn-primary" onClick={() => setShow(!show)}>+ Book Room</button>
+        </div>
       </div>
+
+      {showAddRoom && (
+        <form onSubmit={submitRoom} className="card grid sm:grid-cols-2 gap-3">
+          <h2 className="h2 sm:col-span-2">Add Meeting Room</h2>
+          <div><label className="label">Center *</label>
+            <select className="input" required value={room.centerId} onChange={(e) => setRoom({ ...room, centerId: e.target.value })}>
+              <option value="">— Select —</option>
+              {centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div><label className="label">Room name *</label>
+            <input className="input" required value={room.name} onChange={(e) => setRoom({ ...room, name: e.target.value })} placeholder="e.g. Boardroom A" />
+          </div>
+          <div><label className="label">Capacity *</label>
+            <input className="input" type="number" min={1} required value={room.capacity} onChange={(e) => setRoom({ ...room, capacity: e.target.value })} placeholder="e.g. 8" />
+          </div>
+          <div><label className="label">Hourly rate (₹)</label>
+            <input className="input" type="number" min={0} value={room.hourlyRate} onChange={(e) => setRoom({ ...room, hourlyRate: e.target.value })} placeholder="0 = free / within quota" />
+          </div>
+          <div className="sm:col-span-2 flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => { setShowAddRoom(false); setRoom(EMPTY_ROOM); }}>Cancel</button>
+            <button type="submit" className="btn-primary">Save Room</button>
+          </div>
+        </form>
+      )}
 
       {quota && (
         <div className="card">

@@ -4,16 +4,44 @@ import { useRouter } from "next/navigation";
 
 const CATS = ["TEA_COFFEE", "HOUSEKEEPING", "INTERNET", "FURNITURE", "ELECTRICAL", "PLUMBING", "OTHER"];
 
+const EMPTY_FORM = { name: "", category: "OTHER", contact: "", email: "", phone: "", gstin: "", panNumber: "", bankDetails: "", rateCardJson: "" };
+
 export default function VendorsClient({ initial, role }: any) {
   const router = useRouter();
   const [show, setShow] = useState(false);
-  const [form, setForm] = useState<any>({ name: "", category: "OTHER", contact: "", email: "", phone: "", gstin: "", panNumber: "", bankDetails: "", rateCardJson: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<any>(EMPTY_FORM);
   const isAdminOrOwner = role === "ADMIN" || role === "OWNER";
+
+  function startEdit(v: any) {
+    setEditingId(v.id);
+    setForm({
+      name: v.name || "",
+      category: v.category || "OTHER",
+      contact: v.contact || "",
+      email: v.email || "",
+      phone: v.phone || "",
+      gstin: v.gstin || "",
+      panNumber: v.panNumber || "",
+      bankDetails: v.bankDetails || "",
+      rateCardJson: v.rateCardJson || "",
+    });
+    setShow(true);
+  }
+
+  function cancel() {
+    setShow(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const r = await fetch("/api/vendors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    if (r.ok) { setShow(false); router.refresh(); }
+    const url = editingId ? `/api/vendors/${editingId}` : "/api/vendors";
+    const method = editingId ? "PATCH" : "POST";
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    if (r.ok) { cancel(); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed"); }
   }
   async function blacklist(id: string, current: boolean) {
     let remarks = "";
@@ -35,12 +63,12 @@ export default function VendorsClient({ initial, role }: any) {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="h1">Vendors</h1>
-        <button className="btn-primary" onClick={() => setShow(!show)}>+ Vendor Onboarding</button>
+        <button className="btn-primary" onClick={() => { if (show) cancel(); else setShow(true); }}>+ Vendor Onboarding</button>
       </div>
 
       {show && (
         <form onSubmit={submit} className="card grid sm:grid-cols-2 gap-3">
-          <h2 className="h2 sm:col-span-2">Vendor Onboarding Form</h2>
+          <h2 className="h2 sm:col-span-2">{editingId ? "Edit Vendor" : "Vendor Onboarding Form"}</h2>
           <div><label className="label">Vendor Name *</label><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div><label className="label">Category *</label>
             <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
@@ -57,8 +85,8 @@ export default function VendorsClient({ initial, role }: any) {
             <textarea className="input font-mono text-xs" rows={3} value={form.rateCardJson} onChange={(e) => setForm({ ...form, rateCardJson: e.target.value })} placeholder='[{"item":"Tea pkt","rate":120}]' />
           </div>
           <div className="sm:col-span-2 flex justify-end gap-2">
-            <button type="button" className="btn-ghost" onClick={() => setShow(false)}>Cancel</button>
-            <button className="btn-primary">Save Vendor</button>
+            <button type="button" className="btn-ghost" onClick={cancel}>Cancel</button>
+            <button className="btn-primary">{editingId ? "Update Vendor" : "Save Vendor"}</button>
           </div>
         </form>
       )}
@@ -78,6 +106,7 @@ export default function VendorsClient({ initial, role }: any) {
                 <td className="space-x-2 text-xs">
                   {isAdminOrOwner && (
                     <>
+                      <button className="text-brand-600" onClick={() => startEdit(v)}>Edit</button>
                       <button className="text-amber-700" onClick={() => blacklist(v.id, v.blacklisted)}>{v.blacklisted ? "Restore" : "Blacklist"}</button>
                       <button className="text-red-600" onClick={() => del(v.id, v.name)}>Delete</button>
                     </>

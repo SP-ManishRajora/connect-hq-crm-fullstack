@@ -1,13 +1,15 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { fmtINR, fmtDate } from "@/lib/utils";
 
 const PO_CATS = ["TEA_COFFEE", "HOUSEKEEPING", "INTERNET", "ASSET", "REPAIR", "OTHER"];
 
 export default function ProcurementClient({ prs, pos, vendors, centers }: any) {
   const router = useRouter();
-  const [tab, setTab] = useState<"PR" | "PO">("PR");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "PO" ? "PO" : "PR";
+  const [tab, setTab] = useState<"PR" | "PO">(initialTab);
   const [showPR, setShowPR] = useState(false);
   const [showPO, setShowPO] = useState(false);
   const [pr, setPr] = useState<any>({ centerId: "", reason: "", items: [{ item: "", qty: 1, expectedRate: 0 }] });

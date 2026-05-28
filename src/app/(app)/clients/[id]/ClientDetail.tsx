@@ -71,11 +71,22 @@ export default function ClientDetail({ client }: any) {
 
           <div>
             <label className="label">Person In Charge (PIC)</label>
-            <select className="input" value={picUserId} onChange={(e) => setPicUserId(e.target.value)}>
-              <option value="">— Select —</option>
-              {client.employees.map((u: any) => <option key={u.id} value={u.id}>{u.name} — {u.email}</option>)}
-            </select>
-            <button className="btn-ghost text-xs mt-2" onClick={setPic}>Set as PIC</button>
+            {client.employees.length === 0 ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2 text-sm">
+                No employees added yet. Add an employee in the <strong>Employee Directory</strong> below, then come back here to set them as PIC.
+                <button type="button" className="block mt-2 underline font-medium" onClick={() => { setShowAddEmp(true); document.getElementById("add-emp-section")?.scrollIntoView({ behavior: "smooth" }); }}>
+                  + Add an employee now
+                </button>
+              </div>
+            ) : (
+              <>
+                <select aria-label="Person In Charge" className="input" value={picUserId} onChange={(e) => setPicUserId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {client.employees.map((u: any) => <option key={u.id} value={u.id}>{u.name} — {u.email}</option>)}
+                </select>
+                <button type="button" className="btn-ghost text-xs mt-2" onClick={setPic}>Set as PIC</button>
+              </>
+            )}
             {client.pic && <p className="muted text-xs mt-1">Current: {client.pic.name} · {client.pic.email}</p>}
           </div>
         </div>
@@ -101,7 +112,7 @@ export default function ClientDetail({ client }: any) {
         </div>
       </div>
 
-      <div className="card">
+      <div id="add-emp-section" className="card">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h2 className="h2">Employee Directory ({client.employees.length})</h2>
           <button className="btn-primary" onClick={() => setShowAddEmp(!showAddEmp)}>+ Add Employee</button>

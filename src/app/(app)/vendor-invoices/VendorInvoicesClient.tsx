@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtINR, fmtDate } from "@/lib/utils";
 
@@ -43,19 +44,31 @@ export default function VendorInvoicesClient({ initial, vendors, pos }: any) {
       {show && (
         <form onSubmit={submit} className="card grid sm:grid-cols-2 gap-3">
           <div><label className="label">Vendor *</label>
-            <select className="input" required value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+            <select className="input" required value={vendorId} onChange={(e) => { setVendorId(e.target.value); setPoId(""); }}>
               <option value="">— Select —</option>
               {vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </div>
-          <div><label className="label">Match to PO (optional)</label>
-            <select className="input" value={poId} onChange={(e) => setPoId(e.target.value)}>
-              <option value="">— None —</option>
-              {pos.filter((p: any) => !vendorId || p.vendorId === vendorId).map((p: any) => (
-                <option key={p.id} value={p.id}>{p.poNumber || p.id.slice(0,8)} · {p.vendor.name} · {fmtINR(p.totalAmount)}</option>
-              ))}
-            </select>
-          </div>
+          {vendorId && (() => {
+            const filteredPos = pos.filter((p: any) => p.vendorId === vendorId);
+            return (
+              <div>
+                <label className="label">Match to PO (optional)</label>
+                <select aria-label="Match to PO" className="input" value={poId} onChange={(e) => setPoId(e.target.value)} disabled={filteredPos.length === 0}>
+                  <option value="">{filteredPos.length === 0 ? "— No unpaid POs for this vendor —" : "— None —"}</option>
+                  {filteredPos.map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.poNumber || p.id.slice(0,8)} · {fmtINR(p.totalAmount)}</option>
+                  ))}
+                </select>
+                {filteredPos.length === 0 && (
+                  <p className="muted text-xs mt-1">
+                    This vendor has no unpaid POs. Submit without a PO match, or{" "}
+                    <Link href="/procurement?tab=PO" className="underline font-medium text-brand-600">create a PO →</Link>
+                  </p>
+                )}
+              </div>
+            );
+          })()}
           <div className="sm:col-span-2"><label className="label">Invoice file (PDF/image) *</label>
             <input type="file" accept="application/pdf,image/*" onChange={handleFile} />
             {path && <p className="muted text-xs mt-1">Uploaded: {path}</p>}

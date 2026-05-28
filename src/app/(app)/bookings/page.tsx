@@ -5,9 +5,10 @@ export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const me = await getSessionUser();
-  const [bookings, rooms] = await Promise.all([
+  const [bookings, rooms, centers] = await Promise.all([
     prisma.booking.findMany({ orderBy: { startTime: "desc" }, include: { room: true, center: true, bookedBy: true, client: true }, take: 200 }),
     prisma.meetingRoom.findMany({ where: { active: true }, include: { center: true } }),
+    prisma.center.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
 
   // quota for current client (if logged in user is a client / employee of a client)
@@ -26,5 +27,5 @@ export default async function Page() {
     }
   }
 
-  return <BookingsClient bookings={JSON.parse(JSON.stringify(bookings))} rooms={JSON.parse(JSON.stringify(rooms))} quota={quota} />;
+  return <BookingsClient bookings={JSON.parse(JSON.stringify(bookings))} rooms={JSON.parse(JSON.stringify(rooms))} centers={JSON.parse(JSON.stringify(centers))} quota={quota} />;
 }

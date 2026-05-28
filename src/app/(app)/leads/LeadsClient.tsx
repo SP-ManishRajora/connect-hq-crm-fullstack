@@ -36,7 +36,9 @@ export default function LeadsClient({ initialLeads, centers }: any) {
       setForm({ source: "CALL", name: "", phone: "", email: "", company: "", seatsNeeded: "", budget: "", centerId: "", notes: "" });
       router.refresh();
     } else {
-      alert("Failed");
+      const detail = await res.json().catch(() => ({}));
+      console.error("Lead save failed:", res.status, detail);
+      alert(`Failed (${res.status}): ${detail.error || res.statusText}`);
     }
   }
 

@@ -48,10 +48,17 @@ export default function ClientsClient({ initial, acceptedProposals, centers }: a
       {showOnboard && (
         <form onSubmit={onboard} className="card space-y-3">
           <h2 className="h2">Onboard from accepted proposal</h2>
+          {acceptedProposals.length === 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2 text-sm">
+              No accepted proposals available. To onboard a client, first create a{" "}
+              <Link href="/leads" className="underline font-medium">Lead</Link>, then a{" "}
+              <Link href="/proposals" className="underline font-medium">Proposal</Link>, and mark it as <strong>ACCEPTED</strong>.
+            </div>
+          )}
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2"><label className="label">Accepted proposal *</label>
-              <select className="input" required value={proposalId} onChange={(e) => setProposalId(e.target.value)}>
-                <option value="">— Select —</option>
+              <select className="input" required value={proposalId} onChange={(e) => setProposalId(e.target.value)} disabled={acceptedProposals.length === 0}>
+                <option value="">{acceptedProposals.length === 0 ? "— None available —" : "— Select —"}</option>
                 {acceptedProposals.map((p: any) => (
                   <option key={p.id} value={p.id}>
                     {p.lead?.name || "—"} · {p.center.name} · {p.cabin?.name || "Open"} · {p.seats} seats · {fmtINR(p.rentPerSeat)}/seat

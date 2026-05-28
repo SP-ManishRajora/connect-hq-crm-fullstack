@@ -42,6 +42,7 @@ model User {
   tickets           Ticket[]
   bookings          Booking[]
   picOf             Client[]       @relation("ClientPIC")
+  staffAttendance   StaffAttendance[]
 }
 
 // ============= CENTERS =============
@@ -74,6 +75,7 @@ model Center {
   invoices      ClientInvoice[]
   cabins        Cabin[]
   seats         Seat[]
+  staffAttendance StaffAttendance[]
 }
 
 // ============= CABINS (NEW) =============
@@ -303,7 +305,7 @@ model VendorInvoice {
   poId         String?
   po           PurchaseOrder? @relation(fields: [poId], references: [id])
   filePath     String   // uploaded invoice
-  ocrJson      String?  // OCR-parsed fields (invoice no, amount, gst, date, po ref)
+  ocrJson      String?  @db.Text  // OCR-parsed fields (invoice no, amount, gst, date, po ref)
   invoiceNo    String?
   invoiceDate  DateTime?
   amount       Float    @default(0)
@@ -524,6 +526,24 @@ model Sop {
   category  String
   fileUrl   String?
   createdAt DateTime @default(now())
+}
+
+// ============= STAFF ATTENDANCE (personal check-in / check-out) =============
+model StaffAttendance {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  date        DateTime  // midnight (server local) of the day
+  checkInAt   DateTime?
+  checkOutAt  DateTime?
+  centerId    String?
+  center      Center?   @relation(fields: [centerId], references: [id])
+  status      String    @default("PRESENT") // PRESENT | LATE | HALF_DAY | LEAVE | HOLIDAY | ABSENT
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, date])
 }
 
 // ============= SEAT MAP =============
