@@ -43,6 +43,8 @@ model User {
   bookings          Booking[]
   picOf             Client[]       @relation("ClientPIC")
   staffAttendance   StaffAttendance[]
+  leavesRequested   LeaveRequest[]    @relation("LeaveRequester")
+  leavesDecided     LeaveRequest[]    @relation("LeaveDecider")
 }
 
 // ============= CENTERS =============
@@ -526,6 +528,24 @@ model Sop {
   category  String
   fileUrl   String?
   createdAt DateTime @default(now())
+}
+
+// ============= LEAVE MANAGEMENT =============
+model LeaveRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("LeaveRequester", fields: [userId], references: [id])
+  startDate   DateTime  // midnight (server local) of first leave day
+  endDate     DateTime  // midnight (server local) of last leave day (inclusive)
+  type        String    // CASUAL | SICK | PAID | UNPAID | OTHER
+  reason      String?
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  decidedById String?
+  decidedBy   User?     @relation("LeaveDecider", fields: [decidedById], references: [id])
+  decidedAt   DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 // ============= STAFF ATTENDANCE (personal check-in / check-out) =============
