@@ -54,8 +54,8 @@ model Center {
   city              String
   address           String?
   totalSeats        Int      @default(0)
-  mapImagePath      String?  // digital floor map
-  commonAreaPhotos  String?  // JSON array of file paths
+  mapImagePath      String?  @db.Text // digital floor map
+  commonAreaPhotos  String?  @db.Text // JSON array of file paths
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
 
@@ -88,8 +88,8 @@ model Cabin {
   center      Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
   name        String   // e.g., "Cabin A1"
   capacity    Int      // seats inside the cabin
-  photos      String?  // JSON array of file paths
-  notes       String?
+  photos      String?  @db.Text // JSON array of file paths
+  notes       String?  @db.Text
   createdAt   DateTime @default(now())
 
   seats       Seat[]
@@ -107,7 +107,7 @@ model Lead {
   company       String?
   seatsNeeded   Int?
   budget        Float?
-  notes         String?
+  notes         String?  @db.Text
   status        String    @default("NEW")
   ownerId       String?
   owner         User?     @relation("LeadOwner", fields: [ownerId], references: [id])
@@ -148,7 +148,7 @@ model Visitor {
   lead          Lead?    @relation(fields: [leadId], references: [id])
   centerId      String?
   center        Center?  @relation(fields: [centerId], references: [id])
-  notes         String?
+  notes         String?  @db.Text
   createdAt     DateTime @default(now())
 }
 
@@ -161,12 +161,12 @@ model Proposal {
   center          Center   @relation(fields: [centerId], references: [id])
   cabinId         String?
   cabin           Cabin?   @relation(fields: [cabinId], references: [id])
-  seats           Int
-  rentPerSeat     Float
+  quotedPrice     Float
+  negotiatedPrice Float
   securityDeposit Float
   lockInMonths    Int
-  customisations  String?
-  imagesJson      String?  // auto-populated from cabin + center common area on send
+  customisations  String?  @db.Text
+  imagesJson      String?  @db.Text // auto-populated from cabin + center common area on send
   status          String   @default("DRAFT")
   belowThreshold  Boolean  @default(false)
   approverNotes   String?
@@ -232,7 +232,7 @@ model Contract {
   revisionDate    DateTime
   reminderSent    Boolean  @default(false)
   filePath        String?  // uploaded existing contract
-  ocrParsedJson   String?  // OCR result (renew date, terms etc.)
+  ocrParsedJson   String?  @db.Text // OCR result (renew date, terms etc.)
   createdAt       DateTime @default(now())
 }
 
@@ -251,7 +251,7 @@ model Vendor {
   blacklisted   Boolean  @default(false)
   blacklistRemarks String?
   deletedAt     DateTime?
-  rateCardJson  String?
+  rateCardJson  String?  @db.Text
   createdAt     DateTime @default(now())
 
   pos          PurchaseOrder[]
@@ -315,7 +315,7 @@ model VendorInvoice {
   poMatchStatus String  @default("UNMATCHED") // UNMATCHED | MATCHED | MISMATCH
   status       String   @default("PENDING")    // PENDING | APPROVED | REJECTED | BOOKED
   approvedById String?
-  remarks      String?
+  remarks      String?  @db.Text
   createdAt    DateTime @default(now())
 }
 
@@ -366,7 +366,7 @@ model Repair {
   vendorId    String?
   cost        Float?
   status      String   @default("OPEN")
-  photos      String?
+  photos      String?  @db.Text
   createdAt   DateTime @default(now())
   resolvedAt  DateTime?
 }
@@ -399,7 +399,7 @@ model Booking {
   durationHrs Float    @default(0)
   isChargeable Boolean @default(false)   // true if this booking is past quota
   chargedAmount Float  @default(0)
-  notes     String?
+  notes         String?  @db.Text
   status    String   @default("CONFIRMED")
   createdAt DateTime @default(now())
 }
@@ -444,7 +444,7 @@ model Feedback {
   clientId  String?
   client    Client?  @relation(fields: [clientId], references: [id])
   rating    Int
-  body      String?
+  body      String?  @db.Text
   createdAt DateTime @default(now())
 }
 
@@ -476,7 +476,7 @@ model Referral {
   convertedClient Client? @relation("ReferralFor", fields: [convertedClientId], references: [id])
   feeAmount     Float    @default(0)
   feePaid       Boolean  @default(false)
-  notes         String?
+  notes         String?  @db.Text
   createdAt     DateTime @default(now())
 }
 
@@ -492,7 +492,7 @@ model Expense {
   payee     String
   paymentMode String
   date      DateTime @default(now())
-  notes     String?
+  notes         String?  @db.Text
   attachment String?
 }
 
@@ -517,8 +517,8 @@ model AttendanceLog {
   reportedBy  User     @relation(fields: [reportedById], references: [id])
   date        DateTime @default(now())
   cleanliness String
-  issuesNote  String?
-  photos      String?
+  issuesNote  String?  @db.Text
+  photos      String?  @db.Text
 }
 
 model Sop {
@@ -543,7 +543,7 @@ model LeaveRequest {
   decidedById String?
   decidedBy   User?     @relation("LeaveDecider", fields: [decidedById], references: [id])
   decidedAt   DateTime?
-  notes       String?
+  notes         String?  @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
@@ -559,7 +559,7 @@ model StaffAttendance {
   centerId    String?
   center      Center?   @relation(fields: [centerId], references: [id])
   status      String    @default("PRESENT") // PRESENT | LATE | HALF_DAY | LEAVE | HOLIDAY | ABSENT
-  notes       String?
+  notes         String?  @db.Text
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

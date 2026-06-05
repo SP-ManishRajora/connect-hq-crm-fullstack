@@ -5,11 +5,26 @@ import { useRouter } from "next/navigation";
 
 const EMPTY_CENTER = { name: "", city: "", address: "", totalSeats: 50, openSeats: 0 };
 
+function slugify(name: string) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "unnamed";
+}
+
+async function uploadFile(file: File, centerName: string): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("folder", `centers/${slugify(centerName)}`);
+  const r = await fetch("/api/upload", { method: "POST", body: fd });
+  if (!r.ok) throw new Error("Upload failed");
+  return (await r.json()).path;
+}
+
 export default function CentersClient({ initial, role, myCenterId }: any) {
   const router = useRouter();
   const [show, setShow] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [c, setC] = useState<any>(EMPTY_CENTER);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const isAdmin = role === "ADMIN" || role === "OWNER";
   const isCM = role === "CENTER_MANAGER";
 
@@ -22,6 +37,7 @@ export default function CentersClient({ initial, role, myCenterId }: any) {
       totalSeats: x.totalSeats || 0,
       openSeats: 0,
     });
+    setPhotos(x.commonAreaPhotos ? JSON.parse(x.commonAreaPhotos) : []);
     setShow(true);
   }
 
@@ -29,21 +45,36 @@ export default function CentersClient({ initial, role, myCenterId }: any) {
     setShow(false);
     setEditingId(null);
     setC(EMPTY_CENTER);
+    setPhotos([]);
+  }
+
+  async function handleImageUpload(files: FileList) {
+    setUploading(true);
+    try {
+      const paths = await Promise.all(Array.from(files).map((f) => uploadFile(f, c.name)));
+      setPhotos((prev) => [...prev, ...paths]);
+    } catch { alert("Image upload failed"); }
+    finally { setUploading(false); }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const commonAreaPhotos = photos.length ? JSON.stringify(photos) : null;
     if (editingId) {
       const r = await fetch(`/api/centers/${editingId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: c.name, city: c.city, address: c.address, totalSeats: c.totalSeats }),
+        body: JSON.stringify({ name: c.name, city: c.city, address: c.address, totalSeats: c.totalSeats, commonAreaPhotos }),
       });
       if (r.ok) { cancel(); router.refresh(); }
       else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed"); }
       return;
     }
-    const r = await fetch("/api/centers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(c) });
+    const r = await fetch("/api/centers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...c, commonAreaPhotos }),
+    });
     if (r.ok) {
       const j = await r.json();
       cancel();
@@ -85,6 +116,27 @@ export default function CentersClient({ initial, role, myCenterId }: any) {
           {editingId && (
             <p className="muted text-xs sm:col-span-2">To add / remove seats and cabins, use the center&apos;s <em>Setup</em> page.</p>
           )}
+          <div className="sm:col-span-2">
+            <label className="label">Common Area Photos</label>
+            <label className={`flex items-center gap-2 cursor-pointer w-fit px-3 py-2 rounded border border-dashed border-gray-300 hover:border-brand-500 hover:bg-gray-50 text-sm text-gray-600 transition ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4m0 0l4 4m-4-4v9M20 12a8 8 0 10-16 0" /></svg>
+              {uploading ? "Uploading…" : "Choose images"}
+              <input type="file" accept="image/*" multiple className="sr-only" disabled={uploading}
+                onChange={(e) => e.target.files && handleImageUpload(e.target.files)} />
+            </label>
+            {photos.length > 0 && (
+              <div className="flex flex-wrap gap-3 mt-3">
+                {photos.map((src, i) => (
+                  <div key={i} className="relative group">
+                    <img src={src} alt="" className="w-24 h-24 object-cover rounded-lg border shadow-sm" />
+                    <button type="button"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-xs leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                      onClick={() => setPhotos(photos.filter((_, k) => k !== i))}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={cancel}>Cancel</button>
             <button type="submit" className="btn-primary">{editingId ? "Update center" : "Create center"}</button>

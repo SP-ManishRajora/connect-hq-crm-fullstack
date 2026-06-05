@@ -24,6 +24,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       data.totalSeats = n;
     }
     if ("active" in b) data.active = !!b.active;
+    if ("commonAreaPhotos" in b) data.commonAreaPhotos = b.commonAreaPhotos || null;
 
     const center = await prisma.center.update({ where: { id: params.id }, data });
     return NextResponse.json(center);

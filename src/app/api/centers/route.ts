@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       city: b.city,
       address: b.address || null,
       totalSeats: Number(b.totalSeats),
+      commonAreaPhotos: b.commonAreaPhotos || null,
     },
   });
 

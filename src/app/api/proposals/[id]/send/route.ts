@@ -19,16 +19,14 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   const commonPics = p.center.commonAreaPhotos ? (JSON.parse(p.center.commonAreaPhotos) as string[]) : [];
   const allPics = [...cabinPics, ...commonPics];
 
-  const total = p.seats * p.rentPerSeat;
   await sendMail(
     p.lead.email,
-    `Proposal for ${p.center.name} — ${p.seats} seats`,
+    `Proposal for ${p.center.name}`,
     `Hi ${p.lead.name},\n\nThank you for your interest. Find our proposal below:\n\n` +
       `Center: ${p.center.name}\n` +
       `Cabin: ${p.cabin?.name || "Open seats"}\n` +
-      `Seats: ${p.seats}\n` +
-      `Rent/seat: ${fmtINR(p.rentPerSeat)}\n` +
-      `Total monthly: ${fmtINR(total)}\n` +
+      `Quoted Price: ${fmtINR(p.quotedPrice)}\n` +
+      `Negotiated Price: ${fmtINR(p.negotiatedPrice)}\n` +
       `Security Deposit: ${fmtINR(p.securityDeposit)}\n` +
       `Lock-in: ${p.lockInMonths} months\n\n` +
       (p.customisations ? `Customisations: ${p.customisations}\n\n` : "") +

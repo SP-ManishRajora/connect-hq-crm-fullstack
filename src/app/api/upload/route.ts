@@ -11,7 +11,12 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file") as File | null;
-  const folder = ((form.get("folder") as string) || "misc").replace(/[^a-zA-Z0-9_-]/g, "");
+  // Allow one level of subfolder (e.g. "centers/mumbai-hub") but strip anything unsafe.
+  const folder = ((form.get("folder") as string) || "misc")
+    .split("/")
+    .map((seg) => seg.replace(/[^a-zA-Z0-9_-]/g, ""))
+    .filter(Boolean)
+    .join("/");
   if (!file) return NextResponse.json({ error: "no file" }, { status: 400 });
 
   const buffer = Buffer.from(await file.arrayBuffer());
