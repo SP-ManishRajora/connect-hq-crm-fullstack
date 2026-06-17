@@ -338,9 +338,9 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
 
-              {/* Key details grid */}
+              {/* Key details grid — mirrors the create-proposal form fields */}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">Lead</p>
@@ -349,8 +349,12 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">Center</p>
-                  <p className="font-medium">{viewingProposal.center?.name}</p>
-                  <p className="text-xs text-gray-500">{viewingProposal.cabin?.name || "Open seats"}</p>
+                  <p className="font-medium">{viewingProposal.center?.name || "—"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-0.5">Cabin</p>
+                  <p className="font-medium">{viewingProposal.cabin?.name || "Open / hot-desk seats"}</p>
+                  {viewingProposal.cabin?.capacity != null && <p className="text-xs text-gray-500">{viewingProposal.cabin.capacity} seater</p>}
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">Quoted Price</p>
@@ -359,15 +363,26 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">Negotiated Price</p>
                   <p className="font-medium">{fmtINR(viewingProposal.negotiatedPrice)}</p>
+                  {(() => {
+                    const diff = Number(viewingProposal.quotedPrice) > 0 && Number(viewingProposal.negotiatedPrice) > 0
+                      ? Number(viewingProposal.negotiatedPrice) - Number(viewingProposal.quotedPrice)
+                      : null;
+                    if (diff === null || diff === 0) return null;
+                    return (
+                      <p className={`text-xs mt-0.5 ${diff < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {diff < 0 ? `▼ ${fmtINR(Math.abs(diff))} below quoted` : `▲ ${fmtINR(diff)} above quoted`}
+                      </p>
+                    );
+                  })()}
                   {viewingProposal.belowThreshold && <p className="text-xs text-amber-600">⚠ Below threshold</p>}
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">Security Deposit</p>
-                  <p className="font-medium">{fmtINR(viewingProposal.securityDeposit)}</p>
+                  <p className="font-medium">{fmtINR(Number(viewingProposal.securityDeposit) || 0)}</p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">Lock-in</p>
-                  <p className="font-medium">{viewingProposal.lockInMonths} months</p>
+                  <p className="font-medium">{viewingProposal.lockInMonths ?? 0} months</p>
                 </div>
               </div>
 
