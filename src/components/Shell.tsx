@@ -48,6 +48,7 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
   ]},
   { title: "Admin", items: [
     { mod: "users", href: "/users", label: "Users", icon: "👥" },
+    { mod: "audit_logs", href: "/audit-logs", label: "Audit Log", icon: "🔍" },
   ]},
 ];
 

@@ -34,6 +34,7 @@ export const MODULE_ACCESS: Record<string, Role[]> = {
   users:        ["ADMIN", "OWNER"],
   seatmap:      ["ADMIN", "OWNER", "MANAGER", "SALES", "CENTER_MANAGER"],
   cashflow:     ["ADMIN"],
+  audit_logs:   ["ADMIN", "OWNER"],
   client_portal:["CLIENT"],
 };
 

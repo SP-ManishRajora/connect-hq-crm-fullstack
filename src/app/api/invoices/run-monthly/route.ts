@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMail, GST_RATE, fmtINR, nextInvoiceNo } from "@/lib/utils";
+import { logAction } from "@/lib/audit";
 
 /**
  * Monthly invoice run.
@@ -28,9 +29,9 @@ export async function POST() {
     const existing = await prisma.clientInvoice.findFirst({ where: { clientId: c.id, periodStart } });
     if (existing) continue;
 
-    const rentPerSeat = c.proposal.rentPerSeat;
-    const occ = c.occupiedSeats || c.proposal.seats;
-    const total = c.totalCabinSeats || c.proposal.seats;
+    const rentPerSeat = (c.proposal as any).negotiatedPrice || 0;
+    const occ = c.occupiedSeats || 0;
+    const total = c.totalCabinSeats || 0;
     const unused = Math.max(0, total - occ);
 
     const base = occ * rentPerSeat;
@@ -92,6 +93,7 @@ export async function POST() {
     await prisma.ledgerEntry.create({
       data: { account: "Sundry Debtors", debit: grand, credit: 0, refType: "INVOICE", refId: inv.id, centerId: c.centerId, narration: `Invoice ${inv.invoiceNo} - ${c.companyName}` },
     });
+    await logAction({ action: "INVOICE_SENT", targetType: "ClientInvoice", targetId: inv.id, meta: { invoiceNo: inv.invoiceNo, clientId: c.id, total: grand } });
     created++;
   }
   return NextResponse.json({ created });

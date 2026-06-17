@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   const u = await getSessionUser();
@@ -14,8 +15,8 @@ export async function POST(req: NextRequest) {
   const revisionDate = new Date(start);
   revisionDate.setFullYear(revisionDate.getFullYear() + 1);
 
-  const total = proposal.seats;
-  const occ = b.occupiedSeats !== undefined ? Math.min(Number(b.occupiedSeats), total) : total;
+  const total = (proposal as any).totalCabinSeats || 0;
+  const occ = b.occupiedSeats !== undefined ? Number(b.occupiedSeats) : total;
 
   const client = await prisma.client.create({
     data: {
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       contract: {
         create: {
           startDate: start,
-          monthlyRent: proposal.seats * proposal.rentPerSeat,
+          monthlyRent: (proposal as any).negotiatedPrice || 0,
           securityDeposit: proposal.securityDeposit,
           incrementPct: Number(b.incrementPct) || 5,
           revisionDate,
@@ -53,5 +54,6 @@ export async function POST(req: NextRequest) {
       });
     }
   }
+  await logAction({ userId: u.id, action: "CLIENT_CREATED", targetType: "Client", targetId: client.id, meta: { companyName: client.companyName } });
   return NextResponse.json(client);
 }

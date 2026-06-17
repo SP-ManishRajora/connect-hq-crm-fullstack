@@ -45,6 +45,7 @@ model User {
   staffAttendance   StaffAttendance[]
   leavesRequested   LeaveRequest[]    @relation("LeaveRequester")
   leavesDecided     LeaveRequest[]    @relation("LeaveDecider")
+  auditLogs         AuditLog[]
 }
 
 // ============= CENTERS =============
@@ -108,7 +109,7 @@ model Lead {
   seatsNeeded   Int?
   budget        Float?
   notes         String?  @db.Text
-  status        String    @default("NEW")
+  status        String    @default("Lead")
   ownerId       String?
   owner         User?     @relation("LeadOwner", fields: [ownerId], references: [id])
   centerId      String?
@@ -564,6 +565,18 @@ model StaffAttendance {
   updatedAt   DateTime  @updatedAt
 
   @@unique([userId, date])
+}
+
+// ============= AUDIT LOG =============
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   // e.g. CLIENT_CREATED, INVOICE_SENT, PROPOSAL_APPROVED
+  targetType String?  // e.g. Client, Proposal, Invoice
+  targetId   String?
+  meta       String?  @db.Text // JSON string for extra context
+  createdAt  DateTime @default(now())
 }
 
 // ============= SEAT MAP =============

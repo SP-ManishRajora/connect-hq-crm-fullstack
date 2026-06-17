@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { RATE_THRESHOLD } from "@/lib/utils";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   const u = await getSessionUser();
@@ -26,5 +27,6 @@ export async function POST(req: NextRequest) {
       createdById: u.id,
     },
   });
+  await logAction({ userId: u.id, action: "PROPOSAL_CREATED", targetType: "Proposal", targetId: p.id, meta: { status, negotiatedPrice } });
   return NextResponse.json(p);
 }

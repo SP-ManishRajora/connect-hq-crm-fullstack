@@ -2,27 +2,82 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { allowedNextStatuses } from "@/lib/leadStatus";
 
-const STATUS = ["NEW", "CONTACTED", "TOUR_SCHEDULED", "PROPOSAL_SENT", "NEGOTIATION", "WON", "LOST"];
 const SOURCE = ["WEB_FORM", "CALL", "WHATSAPP", "WALK_IN", "REFERRAL"];
 
-const statusColor: Record<string, string> = {
-  NEW: "bg-gray-100 text-gray-700",
-  CONTACTED: "bg-blue-100 text-blue-700",
-  TOUR_SCHEDULED: "bg-indigo-100 text-indigo-700",
-  PROPOSAL_SENT: "bg-amber-100 text-amber-700",
-  NEGOTIATION: "bg-purple-100 text-purple-700",
-  WON: "bg-emerald-100 text-emerald-700",
-  LOST: "bg-rose-100 text-rose-700",
-};
+// Pipeline stages — each maps 1:1 to a lead `status` value (stored as a string).
+// This is the single source of truth for the stage bar, the status dropdown, and badge colors.
+const STAGES: { label: string; status: string; active: string; idle: string; badge: string }[] = [
+  { label: "Lead", status: "Lead", active: "bg-gray-600 text-white", idle: "bg-gray-100 text-gray-700 hover:bg-gray-200", badge: "bg-gray-100 text-gray-700" },
+  { label: "Connect", status: "Connect", active: "bg-blue-600 text-white", idle: "bg-blue-100 text-blue-700 hover:bg-blue-200", badge: "bg-blue-100 text-blue-700" },
+  { label: "Visit Planned", status: "Visit Planned", active: "bg-indigo-600 text-white", idle: "bg-indigo-100 text-indigo-700 hover:bg-indigo-200", badge: "bg-indigo-100 text-indigo-700" },
+  { label: "Visited", status: "Visited", active: "bg-cyan-600 text-white", idle: "bg-cyan-100 text-cyan-700 hover:bg-cyan-200", badge: "bg-cyan-100 text-cyan-700" },
+  { label: "Proposal", status: "Proposal", active: "bg-amber-600 text-white", idle: "bg-amber-100 text-amber-700 hover:bg-amber-200", badge: "bg-amber-100 text-amber-700" },
+  { label: "Accepted", status: "Accepted", active: "bg-purple-600 text-white", idle: "bg-purple-100 text-purple-700 hover:bg-purple-200", badge: "bg-purple-100 text-purple-700" },
+  { label: "Payment", status: "Payment", active: "bg-teal-600 text-white", idle: "bg-teal-100 text-teal-700 hover:bg-teal-200", badge: "bg-teal-100 text-teal-700" },
+  { label: "Renewable", status: "Renewable", active: "bg-emerald-600 text-white", idle: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200", badge: "bg-emerald-100 text-emerald-700" },
+  { label: "Lost", status: "Lost", active: "bg-rose-600 text-white", idle: "bg-rose-100 text-rose-700 hover:bg-rose-200", badge: "bg-rose-100 text-rose-700" },
+];
+
+// Status -> badge color (derived from STAGES).
+const statusColor: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.status, s.badge]));
+
+// Status -> human label (for table badges).
+const statusLabel: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.status, s.label]));
 
 export default function LeadsClient({ initialLeads, centers }: any) {
   const router = useRouter();
-  const [leads] = useState<any[]>(initialLeads);
+  const [leads, setLeads] = useState<any[]>(initialLeads);
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [stage, setStage] = useState("");
   const [form, setForm] = useState<any>({ source: "CALL", name: "", phone: "", email: "", company: "", seatsNeeded: "", budget: "", centerId: "", notes: "" });
+
+  // Inline status-change UI: which lead is open, the chosen next status, and the required comment.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [nextStatus, setNextStatus] = useState("");
+  const [statusComment, setStatusComment] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function openStatusEdit(lead: any) {
+    const opts = allowedNextStatuses(lead.status);
+    setEditing(lead.id);
+    setNextStatus(opts[0] || "");
+    setStatusComment("");
+  }
+
+  function cancelStatusEdit() {
+    setEditing(null);
+    setNextStatus("");
+    setStatusComment("");
+  }
+
+  async function saveStatus(leadId: string) {
+    if (!nextStatus || !statusComment.trim()) return;
+    setSaving(true);
+    const res = await fetch(`/api/leads/${leadId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: nextStatus, comment: statusComment.trim() }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      const updated = await res.json();
+      setLeads((prev) =>
+        prev.map((l) =>
+          l.id === leadId
+            ? { ...l, status: updated.status, _count: { ...l._count, comments: (l._count?.comments || 0) + 1 } }
+            : l,
+        ),
+      );
+      cancelStatusEdit();
+    } else {
+      const detail = await res.json().catch(() => ({}));
+      alert(`Failed (${res.status}): ${detail.error || res.statusText}`);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,6 +98,7 @@ export default function LeadsClient({ initialLeads, centers }: any) {
   }
 
   const filtered = leads.filter((l) => {
+    if (stage && l.status !== stage) return false;
     if (statusFilter && l.status !== statusFilter) return false;
     if (filter) {
       const q = filter.toLowerCase();
@@ -60,6 +116,26 @@ export default function LeadsClient({ initialLeads, centers }: any) {
 
       <div className="muted">
         Public web form leads land here automatically: <code className="bg-gray-100 px-1 rounded">/lead-form</code>. WhatsApp/call comments can be added per-lead.
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setStage("")}
+          className={`badge cursor-pointer transition ${stage === "" ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+        >
+          All
+        </button>
+        {STAGES.map((s) => (
+          <button
+            key={s.status}
+            type="button"
+            onClick={() => setStage(stage === s.status ? "" : s.status)}
+            className={`badge cursor-pointer transition ${stage === s.status ? s.active : s.idle}`}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {showForm && (
@@ -108,7 +184,7 @@ export default function LeadsClient({ initialLeads, centers }: any) {
           <input placeholder="Search name/phone/email/company" className="input max-w-sm" value={filter} onChange={(e) => setFilter(e.target.value)} />
           <select className="input max-w-xs" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
-            {STATUS.map((s) => <option key={s}>{s}</option>)}
+            {STAGES.map((s) => <option key={s.status} value={s.status}>{s.label}</option>)}
           </select>
         </div>
 
@@ -127,7 +203,58 @@ export default function LeadsClient({ initialLeads, centers }: any) {
                   <td className="text-xs">{l.phone}<br />{l.email}</td>
                   <td>{l.center?.name || "—"}</td>
                   <td>{l.seatsNeeded || "—"}</td>
-                  <td><span className={`badge ${statusColor[l.status] || "bg-gray-100"}`}>{l.status}</span></td>
+                  <td>
+                    {editing === l.id ? (
+                      <div className="flex flex-col gap-1.5 min-w-[200px]">
+                        <select
+                          className="input py-1 text-sm"
+                          title="Next status"
+                          aria-label="Next status"
+                          value={nextStatus}
+                          onChange={(e) => setNextStatus(e.target.value)}
+                        >
+                          {allowedNextStatuses(l.status).map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                        <input
+                          className="input py-1 text-sm"
+                          placeholder="Comment (required)"
+                          value={statusComment}
+                          onChange={(e) => setStatusComment(e.target.value)}
+                        />
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            className="btn-primary py-1 px-2 text-xs disabled:opacity-50"
+                            disabled={saving || !statusComment.trim()}
+                            onClick={() => saveStatus(l.id)}
+                          >
+                            {saving ? "…" : "Save"}
+                          </button>
+                          <button type="button" className="btn-ghost py-1 px-2 text-xs" onClick={cancelStatusEdit}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className={`badge ${statusColor[l.status] || "bg-gray-100"}`}>{statusLabel[l.status] || l.status}</span>
+                        {allowedNextStatuses(l.status).length > 0 && (
+                          <button
+                            type="button"
+                            title="Advance status"
+                            onClick={() => openStatusEdit(l)}
+                            className="text-gray-400 hover:text-brand-600 transition"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v5.5h5.5a.75.75 0 010 1.5h-5.5v5.5a.75.75 0 01-1.5 0v-5.5h-5.5a.75.75 0 010-1.5h5.5v-5.5A.75.75 0 0110 3z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td>{l._count.comments}</td>
                   <td><Link href={`/leads/${l.id}`} className="text-brand-600 text-sm">Open →</Link></td>
                 </tr>

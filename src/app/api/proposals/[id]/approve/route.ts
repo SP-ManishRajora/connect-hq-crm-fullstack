@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const u = await getSessionUser();
@@ -17,5 +18,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       approverNotes: notes || null,
     },
   });
+  await logAction({ userId: u.id, action: decision === "APPROVE" ? "PROPOSAL_APPROVED" : "PROPOSAL_REJECTED", targetType: "Proposal", targetId: params.id, meta: { notes } });
   return NextResponse.json(updated);
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtDate, fmtINR } from "@/lib/utils";
 
-export default function ClientsClient({ initial, acceptedProposals, centers }: any) {
+export default function ClientsClient({ initial, acceptedProposals }: any) {
   const router = useRouter();
   const [showOnboard, setShowOnboard] = useState(false);
   const [proposalId, setProposalId] = useState("");
@@ -95,7 +95,7 @@ export default function ClientsClient({ initial, acceptedProposals, centers }: a
                   <td>{c.contactName}<div className="text-xs text-gray-500">{c.email}</div></td>
                   <td>{c.center?.name}</td>
                   <td>{c.cabin?.name || "Open"}</td>
-                  <td>{c.occupiedSeats || 0}/{c.totalCabinSeats || c.proposal?.seats || 0}</td>
+                  <td>{c.occupiedSeats || 0}/{c.totalCabinSeats || 0}</td>
                   <td>{fmtDate(c.startDate)}</td>
                   <td>{c.sentToOps ? "✅" : <button className="btn-ghost text-xs" onClick={() => sendOps(c.id)}>Send</button>}</td>
                   <td>{c.cmConfirmed ? "✅" : <button className="btn-ghost text-xs" onClick={() => confirmCM(c.id)}>CM</button>}</td>

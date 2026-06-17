@@ -8,7 +8,7 @@ export default function ClientDetail({ client }: any) {
   const router = useRouter();
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [emp, setEmp] = useState<any>({ name: "", email: "", phone: "", aadhaar: "", pan: "", designation: "", password: "" });
-  const [occ, setOcc] = useState<number>(client.occupiedSeats || client.proposal?.seats || 0);
+  const [occ, setOcc] = useState<number>(client.occupiedSeats || 0);
   const [picUserId, setPicUserId] = useState<string>(client.picUserId || "");
 
   async function addEmp(e: React.FormEvent) {
@@ -60,7 +60,7 @@ export default function ClientDetail({ client }: any) {
           <h2 className="h2">Occupancy & PIC</h2>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Total seats taken</label>
-              <input className="input" type="number" value={client.totalCabinSeats || client.proposal?.seats || 0} readOnly />
+              <input className="input" type="number" value={client.totalCabinSeats || 0} readOnly />
             </div>
             <div><label className="label">Currently occupied</label>
               <input className="input" type="number" value={occ} onChange={(e) => setOcc(Number(e.target.value))} />
