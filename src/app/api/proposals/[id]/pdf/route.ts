@@ -41,6 +41,7 @@ function buildPhotoGallery(imgs: string[], baseUrl: string): string {
 }
 
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+  try {
   const u = await getSessionUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -52,7 +53,15 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
   const baseUrl = process.env.APP_URL || "http://localhost:3000";
   const templatePath = path.join(process.cwd(), "ConnectHQ_Proposal_Template.html");
-  let html = await readFile(templatePath, "utf-8");
+  let html: string;
+  try {
+    html = await readFile(templatePath, "utf-8");
+  } catch {
+    return NextResponse.json(
+      { error: `Proposal template not found at ${templatePath}. Ensure ConnectHQ_Proposal_Template.html is deployed to the project root.` },
+      { status: 500 },
+    );
+  }
 
   // -- Date --
   const today = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -181,4 +190,11 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   return new NextResponse(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
+  } catch (err: any) {
+    console.error("GET /api/proposals/[id]/pdf failed:", err);
+    return NextResponse.json(
+      { error: err?.message || "Failed to generate proposal document" },
+      { status: 500 },
+    );
+  }
 }
