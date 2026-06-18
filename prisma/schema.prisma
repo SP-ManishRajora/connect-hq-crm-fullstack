@@ -114,12 +114,45 @@ model Lead {
   owner         User?     @relation("LeadOwner", fields: [ownerId], references: [id])
   centerId      String?
   center        Center?   @relation(fields: [centerId], references: [id])
+
+  // Channel partner this lead came through (Broker / Agent / IPC).
+  sourceType        String?         // "Broker" | "Agent" | "IPC"
+  partnerContactId  String?
+  partnerContact    PartnerContact? @relation(fields: [partnerContactId], references: [id])
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   comments      Comment[]
   visitors      Visitor[]
   proposals     Proposal[]
+}
+
+// A channel partner FIRM: a Broker / Agent / IPC organisation. Holds many contact people.
+model Partner {
+  id            String           @id @default(cuid())
+  type          String           // "Broker" | "Agent" | "IPC"
+  organisation  String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  contacts      PartnerContact[]
+
+  @@unique([type, organisation])
+}
+
+// A contact person belonging to a Partner firm.
+model PartnerContact {
+  id            String   @id @default(cuid())
+  partnerId     String
+  partner       Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String?
+  email         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  leads         Lead[]
 }
 
 model Comment {

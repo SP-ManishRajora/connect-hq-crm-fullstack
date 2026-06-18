@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function VisitorsClient({ initial, leads, centers, preselectLeadId }: any) {
   const router = useRouter();
@@ -33,8 +34,15 @@ export default function VisitorsClient({ initial, leads, centers, preselectLeadI
     else alert("KYC verification failed");
   }
 
+  const backLead = preselectLeadId ? leads.find((l: any) => l.id === preselectLeadId) : null;
+
   return (
     <div className="space-y-4">
+      {preselectLeadId && (
+        <Link href={`/leads/${preselectLeadId}`} className="text-sm text-brand-600">
+          ← Back to lead{backLead ? `: ${backLead.name}` : ""}
+        </Link>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="h1">Visitors / KYC</h1>
         <button className="btn-primary" onClick={() => setShowForm(!showForm)}>+ Register Visitor</button>

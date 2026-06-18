@@ -2,22 +2,48 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { allowedNextStatuses } from "@/lib/leadStatus";
 
-const STATUS = ["NEW", "CONTACTED", "TOUR_SCHEDULED", "PROPOSAL_SENT", "NEGOTIATION", "WON", "LOST"];
 const CHANNELS = ["CALL", "WHATSAPP", "EMAIL", "INTERNAL"];
 
 export default function LeadDetail({ lead, centers }: any) {
   const router = useRouter();
-  const [status, setStatus] = useState(lead.status);
   const [centerId, setCenterId] = useState(lead.centerId || "");
   const [body, setBody] = useState("");
   const [channel, setChannel] = useState("CALL");
 
-  async function updateLead() {
+  // Status upgrade: select shows the current status (default) plus the allowed next status(es).
+  // Picking a different status reveals the required-comment box.
+  const nextOptions = allowedNextStatuses(lead.status);
+  const statusOptions = [lead.status, ...nextOptions];
+  const [nextStatus, setNextStatus] = useState(lead.status);
+  const [statusComment, setStatusComment] = useState("");
+  const [savingStatus, setSavingStatus] = useState(false);
+  const statusChanged = nextStatus !== lead.status;
+
+  async function upgradeStatus() {
+    if (!nextStatus || !statusComment.trim()) return;
+    setSavingStatus(true);
+    const res = await fetch(`/api/leads/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: nextStatus, comment: statusComment.trim() }),
+    });
+    setSavingStatus(false);
+    if (res.ok) {
+      setStatusComment("");
+      router.refresh();
+    } else {
+      const detail = await res.json().catch(() => ({}));
+      alert(`Failed (${res.status}): ${detail.error || res.statusText}`);
+    }
+  }
+
+  async function updateCenter() {
     await fetch(`/api/leads/${lead.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, centerId: centerId || null }),
+      body: JSON.stringify({ centerId: centerId || null }),
     });
     router.refresh();
   }
@@ -58,9 +84,47 @@ export default function LeadDetail({ lead, centers }: any) {
 
           <div className="pt-3 border-t">
             <label className="label">Status</label>
-            <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-              {STATUS.map((s) => <option key={s}>{s}</option>)}
-            </select>
+            {nextOptions.length > 0 ? (
+              <div className="space-y-2">
+                <select
+                  className="input"
+                  title="Status"
+                  aria-label="Status"
+                  value={nextStatus}
+                  onChange={(e) => { setNextStatus(e.target.value); setStatusComment(""); }}
+                >
+                  {statusOptions.map((s) => (
+                    <option key={s} value={s}>{s === lead.status ? `${s} (current)` : s}</option>
+                  ))}
+                </select>
+
+                {statusChanged && (
+                  <>
+                    <label className="label">Comment <span className="text-rose-500">*</span></label>
+                    <textarea
+                      className="input"
+                      rows={4}
+                      placeholder={`Add a comment for moving "${lead.status}" → "${nextStatus}"…`}
+                      value={statusComment}
+                      onChange={(e) => setStatusComment(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary disabled:opacity-50"
+                      disabled={savingStatus || !statusComment.trim()}
+                      onClick={upgradeStatus}
+                    >
+                      {savingStatus ? "Saving…" : `Move to ${nextStatus}`}
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div>
+                <span className="badge bg-gray-100 text-gray-700">{lead.status}</span>
+                <p className="muted text-xs mt-1">This is a final status — no further changes.</p>
+              </div>
+            )}
           </div>
           <div>
             <label className="label">Center</label>
@@ -69,7 +133,7 @@ export default function LeadDetail({ lead, centers }: any) {
               {centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <button className="btn-primary" onClick={updateLead}>Save</button>
+          <button type="button" className="btn-primary" onClick={updateCenter}>Save Center</button>
         </div>
 
         <div className="card space-y-3">

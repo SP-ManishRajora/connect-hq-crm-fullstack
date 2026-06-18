@@ -3,8 +3,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { allowedNextStatuses } from "@/lib/leadStatus";
+import PartnerPicker from "@/components/PartnerPicker";
+import { isValidIndianPhone, isValidEmail } from "@/lib/validators";
 
 const SOURCE = ["WEB_FORM", "CALL", "WHATSAPP", "WALK_IN", "REFERRAL"];
+
+const emptyForm = { source: "CALL", name: "", phone: "", email: "", company: "", seatsNeeded: "", budget: "", centerId: "", notes: "", sourceType: "", partnerContactId: "" };
 
 // Pipeline stages — each maps 1:1 to a lead `status` value (stored as a string).
 // This is the single source of truth for the stage bar, the status dropdown, and badge colors.
@@ -26,14 +30,14 @@ const statusColor: Record<string, string> = Object.fromEntries(STAGES.map((s) =>
 // Status -> human label (for table badges).
 const statusLabel: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.status, s.label]));
 
-export default function LeadsClient({ initialLeads, centers }: any) {
+export default function LeadsClient({ initialLeads, centers, partners = [] }: any) {
   const router = useRouter();
   const [leads, setLeads] = useState<any[]>(initialLeads);
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [stage, setStage] = useState("");
-  const [form, setForm] = useState<any>({ source: "CALL", name: "", phone: "", email: "", company: "", seatsNeeded: "", budget: "", centerId: "", notes: "" });
+  const [form, setForm] = useState<any>({ ...emptyForm });
 
   // Inline status-change UI: which lead is open, the chosen next status, and the required comment.
   const [editing, setEditing] = useState<string | null>(null);
@@ -79,8 +83,18 @@ export default function LeadsClient({ initialLeads, centers }: any) {
     }
   }
 
+  // Lead create-form validation (Indian phone + email; name required; at least one contact).
+  const namePresent = form.name.trim() !== "";
+  const phoneInvalid = form.phone.trim() !== "" && !isValidIndianPhone(form.phone);
+  const emailInvalid = form.email.trim() !== "" && !isValidEmail(form.email);
+  const contactPresent = form.phone.trim() !== "" || form.email.trim() !== "";
+  const seatsInvalid = form.seatsNeeded !== "" && Number(form.seatsNeeded) <= 0;
+  const budgetInvalid = form.budget !== "" && Number(form.budget) < 0;
+  const formValid = namePresent && contactPresent && !phoneInvalid && !emailInvalid && !seatsInvalid && !budgetInvalid;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!formValid) return;
     const res = await fetch("/api/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -88,7 +102,7 @@ export default function LeadsClient({ initialLeads, centers }: any) {
     });
     if (res.ok) {
       setShowForm(false);
-      setForm({ source: "CALL", name: "", phone: "", email: "", company: "", seatsNeeded: "", budget: "", centerId: "", notes: "" });
+      setForm({ ...emptyForm });
       router.refresh();
     } else {
       const detail = await res.json().catch(() => ({}));
@@ -149,10 +163,23 @@ export default function LeadsClient({ initialLeads, centers }: any) {
             <input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div><label className="label">Phone</label>
-            <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <input
+              className={`input ${phoneInvalid ? "border-rose-400" : ""}`}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
+            {phoneInvalid && <p className="text-xs text-rose-600 mt-0.5">Enter a valid 10-digit Indian mobile (starts 6-9).</p>}
           </div>
           <div><label className="label">Email</label>
-            <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input
+              className={`input ${emailInvalid ? "border-rose-400" : ""}`}
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+            {emailInvalid && <p className="text-xs text-rose-600 mt-0.5">Enter a valid email address.</p>}
           </div>
           <div><label className="label">Company</label>
             <input className="input" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
@@ -164,17 +191,43 @@ export default function LeadsClient({ initialLeads, centers }: any) {
             </select>
           </div>
           <div><label className="label">Seats needed</label>
-            <input className="input" type="number" value={form.seatsNeeded} onChange={(e) => setForm({ ...form, seatsNeeded: e.target.value })} />
+            <input
+              className={`input ${seatsInvalid ? "border-rose-400" : ""}`}
+              type="number" min={1}
+              value={form.seatsNeeded}
+              onChange={(e) => setForm({ ...form, seatsNeeded: e.target.value })}
+            />
+            {seatsInvalid && <p className="text-xs text-rose-600 mt-0.5">Seats must be a positive number.</p>}
           </div>
           <div><label className="label">Budget (₹)</label>
-            <input className="input" type="number" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} />
+            <input
+              className={`input ${budgetInvalid ? "border-rose-400" : ""}`}
+              type="number" min={0}
+              value={form.budget}
+              onChange={(e) => setForm({ ...form, budget: e.target.value })}
+            />
+            {budgetInvalid && <p className="text-xs text-rose-600 mt-0.5">Budget cannot be negative.</p>}
           </div>
           <div className="sm:col-span-2"><label className="label">Notes</label>
             <textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
-          <div className="sm:col-span-2 flex gap-2 justify-end">
+
+          {/* Channel partner: where the lead came from (Broker / Agent / IPC) */}
+          <div className="sm:col-span-2 border-t pt-3">
+            <PartnerPicker
+              partners={partners}
+              sourceType={form.sourceType}
+              partnerContactId={form.partnerContactId}
+              onChange={(next) => setForm({ ...form, ...next })}
+            />
+          </div>
+
+          <div className="sm:col-span-2 flex items-center gap-2 justify-end">
+            {namePresent && !contactPresent && (
+              <span className="text-xs text-rose-600 mr-auto">Add a phone or email.</span>
+            )}
             <button type="button" className="btn-ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button className="btn-primary">Save Lead</button>
+            <button type="submit" className="btn-primary disabled:opacity-50" disabled={!formValid}>Save Lead</button>
           </div>
         </form>
       )}
@@ -192,7 +245,7 @@ export default function LeadsClient({ initialLeads, centers }: any) {
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th><th>Source</th><th>Contact</th><th>Center</th><th>Seats</th><th>Status</th><th>Comments</th><th></th>
+                <th>Name</th><th>Source</th><th>Contact</th><th>Center</th><th>Seats</th><th>Status</th><th>Created</th><th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -255,7 +308,7 @@ export default function LeadsClient({ initialLeads, centers }: any) {
                       </div>
                     )}
                   </td>
-                  <td>{l._count.comments}</td>
+                  <td className="text-xs whitespace-nowrap">{l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
                   <td><Link href={`/leads/${l.id}`} className="text-brand-600 text-sm">Open →</Link></td>
                 </tr>
               ))}
