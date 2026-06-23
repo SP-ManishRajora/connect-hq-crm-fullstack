@@ -38,6 +38,7 @@ model User {
   prsRaised         PurchaseRequest[]
   posIssued         PurchaseOrder[]
   comments          Comment[]
+  commentEdits      CommentEdit[]
   attendance        AttendanceLog[]
   tickets           Ticket[]
   bookings          Booking[]
@@ -159,10 +160,26 @@ model Comment {
   id        String   @id @default(cuid())
   leadId    String
   lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  body      String
+  body      String   @db.Text
   channel   String
   authorId  String?
   author    User?    @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  // Edit tracking: who/when the current body was last changed; full prior versions in CommentEdit.
+  editedAt   DateTime?
+  editedById String?
+  edits      CommentEdit[]
+}
+
+// Immutable audit log: one row per edit of a Comment, storing the body it had BEFORE that edit.
+model CommentEdit {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  prevBody  String   @db.Text
+  editorId  String?
+  editor    User?    @relation(fields: [editorId], references: [id])
   createdAt DateTime @default(now())
 }
 

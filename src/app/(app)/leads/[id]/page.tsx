@@ -7,7 +7,19 @@ export const dynamic = "force-dynamic";
 export default async function Page({ params }: { params: { id: string } }) {
   const lead = await prisma.lead.findUnique({
     where: { id: params.id },
-    include: { center: true, partnerContact: { include: { partner: true } }, comments: { include: { author: true }, orderBy: { createdAt: "desc" } }, visitors: true, proposals: true },
+    include: {
+      center: true,
+      partnerContact: { include: { partner: true } },
+      comments: {
+        include: {
+          author: true,
+          edits: { include: { editor: { select: { name: true } } }, orderBy: { createdAt: "desc" } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
+      visitors: true,
+      proposals: true,
+    },
   });
   if (!lead) return notFound();
   const [centers, partners] = await Promise.all([

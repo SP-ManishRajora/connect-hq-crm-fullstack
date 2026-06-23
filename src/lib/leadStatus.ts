@@ -1,6 +1,6 @@
 // Single source of truth for lead pipeline status transitions.
-// Status is stored as a plain string on Lead. Stages advance one step at a time.
-// "Lost" is only reachable from the first stage ("Lead"); after that the pipeline is linear.
+// Status is stored as a plain string on Lead. A lead may move to ANY other
+// status (forward, backward, or skipping stages), but every change requires a comment.
 
 export const LEAD_STAGES = [
   "Lead",
@@ -15,20 +15,15 @@ export const LEAD_STAGES = [
 
 export const LEAD_LOST = "Lost";
 
-// Returns the statuses a lead may move to from its current status.
-// - First stage ("Lead"): next pipeline stage OR "Lost".
-// - Any later pipeline stage: only the next pipeline stage.
-// - Last stage ("Renewable"), "Lost", or unknown status: no transitions.
+// All statuses a lead can hold, in display order.
+export const ALL_STATUSES: string[] = [...LEAD_STAGES, LEAD_LOST];
+
+// Returns the statuses a lead may move to from its current status:
+// any status other than the one it's already in.
 export function allowedNextStatuses(current: string): string[] {
-  if (current === LEAD_LOST) return [];
-  const i = LEAD_STAGES.indexOf(current as (typeof LEAD_STAGES)[number]);
-  if (i === -1) return [];
-  const out: string[] = [];
-  if (i + 1 < LEAD_STAGES.length) out.push(LEAD_STAGES[i + 1]);
-  if (current === LEAD_STAGES[0]) out.push(LEAD_LOST);
-  return out;
+  return ALL_STATUSES.filter((s) => s !== current);
 }
 
 export function canTransition(from: string, to: string): boolean {
-  return allowedNextStatuses(from).includes(to);
+  return from !== to && ALL_STATUSES.includes(to);
 }

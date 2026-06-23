@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { allowedNextStatuses } from "@/lib/leadStatus";
+import { fmtDateTime } from "@/lib/utils";
 
 const CHANNELS = ["CALL", "WHATSAPP", "EMAIL", "INTERNAL"];
 
@@ -12,7 +13,37 @@ export default function LeadDetail({ lead, centers }: any) {
   const [body, setBody] = useState("");
   const [channel, setChannel] = useState("CALL");
 
-  // Status upgrade: select shows the current status (default) plus the allowed next status(es).
+  // Inline comment editing: which comment is open, its draft body, and which have history expanded.
+  const [editingComment, setEditingComment] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
+  const [showHistory, setShowHistory] = useState<Record<string, boolean>>({});
+
+  function startEditComment(c: any) {
+    setEditingComment(c.id);
+    setCommentDraft(c.body);
+  }
+
+  async function saveEditComment(commentId: string) {
+    if (!commentDraft.trim()) return;
+    setSavingComment(true);
+    const res = await fetch(`/api/leads/${lead.id}/comments/${commentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: commentDraft.trim() }),
+    });
+    setSavingComment(false);
+    if (res.ok) {
+      setEditingComment(null);
+      setCommentDraft("");
+      router.refresh();
+    } else {
+      const detail = await res.json().catch(() => ({}));
+      alert(`Failed (${res.status}): ${detail.error || res.statusText}`);
+    }
+  }
+
+  // Status change: select shows the current status (default) plus every other status.
   // Picking a different status reveals the required-comment box.
   const nextOptions = allowedNextStatuses(lead.status);
   const statusOptions = [lead.status, ...nextOptions];
@@ -154,10 +185,82 @@ export default function LeadDetail({ lead, centers }: any) {
               <div key={c.id} className="border rounded-md p-2 text-sm">
                 <div className="flex justify-between">
                   <span className="badge bg-gray-100 text-gray-700">{c.channel}</span>
-                  <span className="muted text-xs">{new Date(c.createdAt).toLocaleString()}</span>
+                  <span className="muted text-xs">{fmtDateTime(c.createdAt)}</span>
                 </div>
-                <div className="mt-1">{c.body}</div>
-                {c.author && <div className="text-xs text-gray-400 mt-1">by {c.author.name}</div>}
+
+                {editingComment === c.id ? (
+                  <div className="mt-1 space-y-1.5">
+                    <textarea
+                      className="input"
+                      rows={3}
+                      title="Edit comment"
+                      aria-label="Edit comment"
+                      value={commentDraft}
+                      onChange={(e) => setCommentDraft(e.target.value)}
+                    />
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        className="btn-primary py-1 px-2 text-xs disabled:opacity-50"
+                        disabled={savingComment || !commentDraft.trim()}
+                        onClick={() => saveEditComment(c.id)}
+                      >
+                        {savingComment ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost py-1 px-2 text-xs"
+                        onClick={() => { setEditingComment(null); setCommentDraft(""); }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1">{c.body}</div>
+                )}
+
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs text-gray-400">
+                    {c.author ? `by ${c.author.name}` : ""}
+                    {c.editedAt && (
+                      <span className="italic"> · edited {fmtDateTime(c.editedAt)}</span>
+                    )}
+                  </span>
+                  {editingComment !== c.id && (
+                    <span className="flex gap-2">
+                      {c.edits?.length > 0 && (
+                        <button
+                          type="button"
+                          className="text-xs text-gray-400 hover:text-brand-600"
+                          onClick={() => setShowHistory((h) => ({ ...h, [c.id]: !h[c.id] }))}
+                        >
+                          {showHistory[c.id] ? "Hide history" : `History (${c.edits.length})`}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="text-xs text-gray-400 hover:text-brand-600"
+                        onClick={() => startEditComment(c)}
+                      >
+                        Edit
+                      </button>
+                    </span>
+                  )}
+                </div>
+
+                {showHistory[c.id] && c.edits?.length > 0 && (
+                  <div className="mt-2 border-t pt-2 space-y-1.5">
+                    {c.edits.map((e: any) => (
+                      <div key={e.id} className="text-xs bg-gray-50 rounded p-1.5">
+                        <div className="text-gray-400">
+                          {e.editor ? `${e.editor.name} · ` : ""}{fmtDateTime(e.createdAt)}
+                        </div>
+                        <div className="text-gray-600 whitespace-pre-wrap">{e.prevBody}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {lead.comments.length === 0 && <p className="muted">No comments yet.</p>}

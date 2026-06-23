@@ -15,6 +15,22 @@ export function fmtDate(d: Date | string | null | undefined) {
   return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// Date + time, with a fixed locale and timezone so server and client render
+// identically (avoids React hydration mismatches from host-dependent defaults).
+export function fmtDateTime(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return dt.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+}
+
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }

@@ -8,7 +8,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json();
 
-  // Status changes are gated: only a valid one-step transition, and a comment is required.
+  // Status changes are gated: the target must be a known status, and a comment is required.
   if (typeof b.status === "string") {
     const existing = await prisma.lead.findUnique({ where: { id: params.id }, select: { status: true } });
     if (!existing) return NextResponse.json({ error: "lead not found" }, { status: 404 });
@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.status !== existing.status) {
       if (!canTransition(existing.status, b.status)) {
         return NextResponse.json(
-          { error: `Cannot move from "${existing.status}" to "${b.status}". Status advances one step at a time.` },
+          { error: `Cannot move from "${existing.status}" to "${b.status}". Unknown status.` },
           { status: 400 },
         );
       }
