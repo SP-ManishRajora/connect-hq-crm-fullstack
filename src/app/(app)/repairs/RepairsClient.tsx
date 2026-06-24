@@ -15,7 +15,8 @@ export default function RepairsClient({ role, repairs, categories, centers }: an
   // Local copy of category names so a category added via the combobox appears immediately.
   const [catNames, setCatNames] = useState<string[]>(categories.map((c: any) => c.name));
 
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  // Who may create repair categories: Admin/Owner + Center Manager.
+  const canAddCat = role === "ADMIN" || role === "OWNER" || role === "CENTER_MANAGER";
 
   // Persist a brand-new repair category (admin-only) and select it in the form.
   async function createCategory(name: string): Promise<string | null> {
@@ -35,7 +36,7 @@ export default function RepairsClient({ role, repairs, categories, centers }: an
   async function onCategoryChange(val: string) {
     const v = val.trim();
     if (v && !catNames.includes(v) && !catNames.includes(v.toUpperCase().replace(/\s+/g, "_"))) {
-      if (!isAdmin) { alert("New categories can only be added by an Admin/Owner."); return; }
+      if (!canAddCat) { alert("New categories can only be added by Admin/Owner/Center Manager."); return; }
       const created = await createCategory(v);
       if (created) setR((cur: any) => ({ ...cur, category: created }));
       return;
@@ -81,11 +82,11 @@ export default function RepairsClient({ role, repairs, categories, centers }: an
         <h1 className="h1">Repairs</h1>
         <div className="flex gap-2">
           <button className="btn-primary" onClick={() => setShow(!show)}>+ Log Repair</button>
-          {isAdmin && <button className="btn-ghost" onClick={() => setShowCat(!showCat)}>+ Add Category (Admin)</button>}
+          {canAddCat && <button className="btn-ghost" onClick={() => setShowCat(!showCat)}>+ Add Category</button>}
         </div>
       </div>
 
-      {showCat && isAdmin && (
+      {showCat && canAddCat && (
         <form onSubmit={addCat} className="card flex gap-2 items-end">
           <div className="flex-1"><label className="label">Category Name</label><input className="input" value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="e.g. CARPET_REPAIR" /></div>
           <button className="btn-primary">Add</button>
@@ -107,9 +108,9 @@ export default function RepairsClient({ role, repairs, categories, centers }: an
               onChange={onCategoryChange}
               options={catNames}
               placeholder="Select category"
-              allowAdd={isAdmin}
+              allowAdd={canAddCat}
             />
-            {!isAdmin && <p className="text-xs text-gray-400 mt-0.5">Only Admin/Owner can add new categories.</p>}
+            {!canAddCat && <p className="text-xs text-gray-400 mt-0.5">Only Admin/Owner/Center Manager can add new categories.</p>}
           </div>
           <div><label className="label">Assign to</label>
             <select className="input" value={r.assignedTo} onChange={(e) => setR({ ...r, assignedTo: e.target.value })}>

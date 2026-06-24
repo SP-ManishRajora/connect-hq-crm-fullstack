@@ -5,8 +5,8 @@ import { requireRole } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
   const u = await getSessionUser();
-  if (!u || !requireRole(u.role, ["ADMIN", "OWNER"])) {
-    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  if (!u || !requireRole(u.role, ["ADMIN", "OWNER", "CENTER_MANAGER"])) {
+    return NextResponse.json({ error: "Not permitted" }, { status: 403 });
   }
   const b = await req.json();
   const c = await prisma.repairCategory.create({ data: { name: b.name } });
