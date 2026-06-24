@@ -2,7 +2,8 @@
 
 Multi-center ERP for a co-working business. Full-stack web app — **Next.js 14 (App Router) + Prisma + SQLite + Tailwind CSS + SheetJS + nodemailer**. Mobile-responsive.
 
-> 📜 See **[CHANGES.md](./CHANGES.md)** for the per-patch changelog.
+> 📚 All project documentation lives in **[docs/](./docs/)** — see the [docs index](./docs/README.md).
+> 📜 Per-patch changelog: **[docs/CHANGELOG.md](./docs/CHANGELOG.md)**.
 
 ## Role-split center setup (v6)
 
@@ -25,7 +26,7 @@ CENTER_MANAGER users can only setup their own center (`User.centerId === center.
 - **User transfer** (admin reassigns open work to another user, full audit)
 - **Reporting hierarchy** + **end-to-end leave management** (policies, balances, half-day, escalation, cancel/refund, email at every step)
 - **GPS staff attendance** (browser geolocation)
-- **CRM, Visitors, Proposals (cabin pics auto-attach), Onboarding, Bulk Onboarding (Excel + Accounts approval), Contracts Inbox + Renewals + Audit Revisions, Procurement (PR → PO → PI → Invoice), Vendor Invoices (OCR + PO match + approval), Vendors (blacklist with remarks), Inventory & Assets, Repairs, Recurring POs, Client Invoicing (half-price unused seats + meeting-room overage + GST), Meeting Rooms (with 2hr/seat/month quota), Client Portal & QR, Notice Board & Ads, Referrals, Accounts (ledger + petty cash + GST + TDS + Cashflow CSV), SOPs, Center Daily Logs, Centers (basic create + CM setup), Seat Map (color-coded)** — see CHANGES.md.
+- **CRM, Visitors, Proposals (cabin pics auto-attach), Onboarding, Bulk Onboarding (Excel + Accounts approval), Contracts Inbox + Renewals + Audit Revisions, Procurement (PR → PO → PI → Invoice), Vendor Invoices (OCR + PO match + approval), Vendors (blacklist with remarks), Inventory & Assets, Repairs, Recurring POs, Client Invoicing (half-price unused seats + meeting-room overage + GST), Meeting Rooms (with 2hr/seat/month quota), Client Portal & QR, Notice Board & Ads, Referrals, Accounts (ledger + petty cash + GST + TDS + Cashflow CSV), SOPs, Center Daily Logs, Centers (basic create + CM setup), Occupancy module (spaces/allocations/reservations/transfers/map/reports)** — see [docs/CHANGELOG.md](./docs/CHANGELOG.md).
 
 ## Quick start
 
