@@ -9,7 +9,7 @@ type SessionUser = { id: string; name: string; email: string; role: string; cent
 const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: string; icon: string }[] }[] = [
   { title: "Workspace", items: [
     { mod: "dashboard", href: "/dashboard", label: "Dashboard", icon: "🏠" },
-    { mod: "seatmap", href: "/seatmap", label: "Seat Map", icon: "🗺️" },
+    { mod: "occupancy", href: "/occupancy", label: "Occupancy", icon: "🪑" },
     { mod: "centers", href: "/centers", label: "Centers", icon: "🏢" },
   ]},
   { title: "Sales", items: [

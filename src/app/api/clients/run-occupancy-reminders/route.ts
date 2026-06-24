@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendMail } from "@/lib/utils";
+import { sendMail } from "@/lib/mail";
 
 // Daily cron — for clients with occupiedSeats < totalCabinSeats for >3 months, alert the sales team.
 export async function POST() {

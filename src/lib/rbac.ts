@@ -33,6 +33,9 @@ export const MODULE_ACCESS: Record<string, Role[]> = {
   centers:      ["ADMIN", "OWNER", "CENTER_MANAGER"],   // CM can see list but only setup their own
   users:        ["ADMIN", "OWNER"],
   seatmap:      ["ADMIN", "OWNER", "MANAGER", "SALES", "CENTER_MANAGER"],
+  occupancy:         ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER", "SALES", "ACCOUNTS"],
+  occupancy_manage:  ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER"],   // create/edit/transfer/allocate
+  occupancy_reports: ["ADMIN", "OWNER", "ACCOUNTS", "MANAGER", "CENTER_MANAGER"],
   cashflow:     ["ADMIN"],
   audit_logs:   ["ADMIN", "OWNER"],
   client_portal:["CLIENT"],

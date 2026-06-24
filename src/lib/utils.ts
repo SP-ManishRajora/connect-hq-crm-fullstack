@@ -38,8 +38,3 @@ export function todayISO() {
 export function nextInvoiceNo(prefix = "INV") {
   return `${prefix}-${Date.now()}`;
 }
-
-export async function sendMail(to: string, subject: string, body: string) {
-  // Stub — replace with nodemailer or transactional provider
-  console.log(`\n📧 [EMAIL] To: ${to}\nSubject: ${subject}\n${body}\n`);
-}

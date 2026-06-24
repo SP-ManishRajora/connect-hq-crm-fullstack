@@ -1,7 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fmtINR } from "@/lib/utils";
+import Swal from "sweetalert2";
+import { fmtINR, fmtDateTime } from "@/lib/utils";
 
 async function uploadFile(file: File): Promise<string> {
   const fd = new FormData(); fd.append("file", file); fd.append("folder", "proposals");
@@ -23,6 +24,13 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
   const router = useRouter();
   const [showForm, setShowForm] = useState(!!preselectLeadId);
   const [viewingProposal, setViewingProposal] = useState<any>(null);
+  const [sendProposal, setSendProposal] = useState<any>(null);
+  const [sendEmail, setSendEmail] = useState("");
+  const [sendSubject, setSendSubject] = useState("");
+  const [sendBody, setSendBody] = useState("");
+  const [includeLink, setIncludeLink] = useState(true);
+  const [composerLoading, setComposerLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -100,10 +108,72 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
     await fetch(`/api/proposals/${id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) });
     router.refresh();
   }
-  async function send(id: string) {
-    const r = await fetch(`/api/proposals/${id}/send`, { method: "POST" });
-    if (r.ok) { alert("Sent (logged to console). Cabin and common area photos attached."); router.refresh(); }
-    else { const j = await r.json(); alert(j.error || "Failed"); }
+  // Send flow: open the email composer. Recipient is auto-populated from the lead, and the
+  // subject/body are previewed from the server's default template (user can edit them).
+  async function openSend(proposal: any) {
+    setSendProposal(proposal);
+    setSendEmail(proposal.lead?.email || "");
+    setSendSubject("");
+    setSendBody("");
+    setIncludeLink(true);
+    setComposerLoading(true);
+    try {
+      const r = await fetch(`/api/proposals/${proposal.id}/send`);
+      if (r.ok) {
+        const j = await r.json();
+        setSendEmail((cur) => cur || j.recipient || "");
+        setSendSubject(j.subject || "");
+        setSendBody(j.body || "");
+      }
+    } finally {
+      setComposerLoading(false);
+    }
+  }
+  async function confirmSend() {
+    if (!sendProposal) return;
+    const email = sendEmail.trim();
+    const resend = sendProposal.status === "SENT";
+    if (!email) {
+      Swal.fire({ icon: "warning", title: "Recipient needed", text: "Enter a recipient email address.", confirmButtonColor: "#4f46e5" });
+      return;
+    }
+    if (!sendSubject.trim() || !sendBody.trim()) {
+      Swal.fire({ icon: "warning", title: "Email incomplete", text: "Subject and message can't be empty.", confirmButtonColor: "#4f46e5" });
+      return;
+    }
+    setSending(true);
+    const r = await fetch(`/api/proposals/${sendProposal.id}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, subject: sendSubject, body: sendBody, includeLink }),
+    });
+    setSending(false);
+    if (r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setSendProposal(null);
+      setViewingProposal(null);
+      router.refresh();
+      if (j.emailSent) {
+        Swal.fire({
+          icon: "success",
+          title: resend ? "Proposal resent" : "Proposal sent",
+          html: `Your email was delivered to <b>${email}</b>.`,
+          confirmButtonColor: "#4f46e5",
+          timer: 3500,
+          timerProgressBar: true,
+        });
+      } else {
+        Swal.fire({
+          icon: "info",
+          title: "Marked as sent",
+          html: `The proposal is marked sent, but the email was <b>not delivered</b> because SMTP isn't configured.<br/><span class="text-xs text-gray-500">It was logged to the server console.</span>`,
+          confirmButtonColor: "#4f46e5",
+        });
+      }
+    } else {
+      const j = await r.json().catch(() => ({}));
+      Swal.fire({ icon: "error", title: "Couldn't send", text: j.error || "Failed to send the proposal.", confirmButtonColor: "#4f46e5" });
+    }
   }
   async function accept(id: string) {
     if (!confirm("Mark proposal as accepted by client?")) return;
@@ -286,7 +356,14 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
                 <td>{fmtINR(p.negotiatedPrice)}{p.belowThreshold && <span className="ml-1 text-xs text-amber-700">⚠</span>}</td>
                 <td>{fmtINR(p.securityDeposit)}</td>
                 <td>{p.lockInMonths}m</td>
-                <td><span className={`badge ${statusColor[p.status]}`}>{p.status}</span></td>
+                <td>
+                  <span className={`badge ${statusColor[p.status]}`}>{p.status}</span>
+                  {p.sentAt && (
+                    <div className="text-[10px] text-indigo-600 mt-0.5" title={`Sent ${fmtDateTime(p.sentAt)}${p.lead?.email ? ` to ${p.lead.email}` : ""}`}>
+                      ✓ Sent {fmtDateTime(p.sentAt)}
+                    </div>
+                  )}
+                </td>
                 <td className="space-x-1">
                   <button type="button" className="btn-ghost text-xs" onClick={() => setViewingProposal(p)}>View</button>
                   {p.status === "PENDING_APPROVAL" && (
@@ -295,8 +372,13 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
                       <button className="btn-ghost text-xs" onClick={() => approve(p.id, "REJECT")}>Reject</button>
                     </>
                   )}
-                  {(p.status === "DRAFT" || p.status === "APPROVED") && <button className="btn-ghost text-xs" onClick={() => send(p.id)}>Send</button>}
-                  {p.status === "SENT" && <button className="btn-ghost text-xs" onClick={() => accept(p.id)}>Mark accepted</button>}
+                  {(p.status === "DRAFT" || p.status === "APPROVED") && <button type="button" className="btn-ghost text-xs" onClick={() => openSend(p)}>Send</button>}
+                  {p.status === "SENT" && (
+                    <>
+                      <button type="button" className="btn-ghost text-xs" onClick={() => openSend(p)}>Resend</button>
+                      <button type="button" className="btn-ghost text-xs" onClick={() => accept(p.id)}>Mark accepted</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -326,12 +408,24 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition"
-                  title="Download PDF"
+                  title="View / print PDF"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" />
                   </svg>
                   PDF
+                </a>
+                <a
+                  href={`/api/proposals/${viewingProposal.id}/pdf?edit=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium transition"
+                  title="Edit the proposal document, then save & print"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit PDF
                 </a>
                 <button type="button" className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={() => setViewingProposal(null)}>×</button>
               </div>
@@ -438,8 +532,10 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
               <div className="text-xs text-gray-400 space-y-0.5 pt-2 border-t">
                 <p>Created by {viewingProposal.createdBy?.name || "—"}</p>
                 {viewingProposal.approvedBy && <p>Approved by {viewingProposal.approvedBy.name}</p>}
-                {viewingProposal.sentAt && <p>Sent {new Date(viewingProposal.sentAt).toLocaleDateString()}</p>}
-                {viewingProposal.acceptedAt && <p>Accepted {new Date(viewingProposal.acceptedAt).toLocaleDateString()}</p>}
+                {viewingProposal.sentAt && (
+                  <p className="text-indigo-600">✓ Sent {fmtDateTime(viewingProposal.sentAt)}{viewingProposal.lead?.email ? ` to ${viewingProposal.lead.email}` : ""}</p>
+                )}
+                {viewingProposal.acceptedAt && <p>Accepted {fmtDateTime(viewingProposal.acceptedAt)}</p>}
               </div>
             </div>
 
@@ -452,12 +548,98 @@ export default function ProposalsClient({ initial, leads, centers, preselectLead
                 </>
               )}
               {(viewingProposal.status === "DRAFT" || viewingProposal.status === "APPROVED") && (
-                <button type="button" className="btn-primary text-xs" onClick={() => { send(viewingProposal.id); setViewingProposal(null); }}>Send</button>
+                <button type="button" className="btn-primary text-xs" onClick={() => openSend(viewingProposal)}>Send</button>
               )}
               {viewingProposal.status === "SENT" && (
-                <button type="button" className="btn-primary text-xs" onClick={() => { accept(viewingProposal.id); setViewingProposal(null); }}>Mark Accepted</button>
+                <>
+                  <button type="button" className="btn-ghost text-xs" onClick={() => openSend(viewingProposal)}>Resend</button>
+                  <button type="button" className="btn-primary text-xs" onClick={() => { accept(viewingProposal.id); setViewingProposal(null); }}>Mark Accepted</button>
+                </>
               )}
               <button type="button" className="btn-ghost text-xs" onClick={() => setViewingProposal(null)}>Close</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Email composer — preview / edit the message, then send */}
+      {sendProposal && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => !sending && setSendProposal(null)} />
+          <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[94%] max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-xl p-6 space-y-4">
+            <div>
+              <h2 className="font-semibold text-lg">{sendProposal.status === "SENT" ? "Resend Proposal" : "Compose Email"}</h2>
+              <p className="text-xs text-gray-500">
+                {sendProposal.lead?.name || "Client"} · {sendProposal.center?.name}
+              </p>
+              {sendProposal.sentAt && (
+                <p className="text-xs text-indigo-600 mt-1">✓ Last sent {fmtDateTime(sendProposal.sentAt)}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="label" htmlFor="send-email">To</label>
+              <input
+                id="send-email"
+                type="email"
+                className="input"
+                placeholder="client@example.com"
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+                autoFocus
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                {sendProposal.lead?.email
+                  ? "Pre-filled from the lead. Edit it if needed — the change is saved back to the lead."
+                  : "This lead has no email on file. Enter one to send."}
+              </p>
+            </div>
+
+            <div>
+              <label className="label" htmlFor="send-subject">Subject</label>
+              <input
+                id="send-subject"
+                type="text"
+                className="input"
+                placeholder={composerLoading ? "Loading…" : "Subject"}
+                value={sendSubject}
+                onChange={(e) => setSendSubject(e.target.value)}
+                disabled={composerLoading}
+              />
+            </div>
+
+            <div>
+              <label className="label" htmlFor="send-body">Message</label>
+              <textarea
+                id="send-body"
+                className="input font-mono text-sm leading-relaxed"
+                rows={12}
+                placeholder={composerLoading ? "Loading preview…" : "Write your message…"}
+                value={sendBody}
+                onChange={(e) => setSendBody(e.target.value)}
+                disabled={composerLoading}
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={includeLink}
+                onChange={(e) => setIncludeLink(e.target.checked)}
+              />
+              Include a link to the proposal document
+            </label>
+
+            <div className="flex gap-2 justify-end pt-1">
+              <button type="button" className="btn-ghost text-xs" disabled={sending} onClick={() => setSendProposal(null)}>Cancel</button>
+              <button
+                type="button"
+                className="btn-primary text-xs disabled:opacity-50"
+                disabled={sending || composerLoading || !sendEmail.trim() || !sendSubject.trim() || !sendBody.trim()}
+                onClick={confirmSend}
+              >
+                {sending ? "Sending…" : sendProposal.status === "SENT" ? "Resend Email" : "Send Email"}
+              </button>
             </div>
           </div>
         </>

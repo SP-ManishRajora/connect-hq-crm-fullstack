@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendMail, fmtINR, fmtDate } from "@/lib/utils";
+import { fmtINR, fmtDate } from "@/lib/utils";
+import { sendMail } from "@/lib/mail";
 
 // Scheduled cron: hits this daily — emails accounts team for revisions due in next 30 days
 export async function POST() {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { sendMail } from "@/lib/utils";
+import { sendMail } from "@/lib/mail";
 
 export async function POST(req: NextRequest) {
   const u = await getSessionUser();

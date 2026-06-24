@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendMail, GST_RATE, fmtINR, nextInvoiceNo } from "@/lib/utils";
+import { GST_RATE, fmtINR, nextInvoiceNo } from "@/lib/utils";
+import { sendMail } from "@/lib/mail";
 import { logAction } from "@/lib/audit";
 
 /**

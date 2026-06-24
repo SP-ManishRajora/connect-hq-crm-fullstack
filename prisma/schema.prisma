@@ -47,6 +47,10 @@ model User {
   leavesRequested   LeaveRequest[]    @relation("LeaveRequester")
   leavesDecided     LeaveRequest[]    @relation("LeaveDecider")
   auditLogs         AuditLog[]
+
+  // Occupancy module
+  allocationsMade   Allocation[]
+  reservationsMade  Reservation[]
 }
 
 // ============= CENTERS =============
@@ -80,6 +84,11 @@ model Center {
   cabins        Cabin[]
   seats         Seat[]
   staffAttendance StaffAttendance[]
+
+  // Occupancy module
+  floors        Floor[]
+  zones         Zone[]
+  spaces        Space[]
 }
 
 // ============= CABINS (NEW) =============
@@ -97,6 +106,7 @@ model Cabin {
   seats       Seat[]
   proposals   Proposal[]
   clients     Client[]
+  spaces      Space[]   // occupancy module bridge
 }
 
 // ============= CRM: LEADS =============
@@ -218,6 +228,7 @@ model Proposal {
   lockInMonths    Int
   customisations  String?  @db.Text
   imagesJson      String?  @db.Text // auto-populated from cabin + center common area on send
+  pdfSnapshot     String?  // public path of the last edited+saved proposal document (HTML)
   status          String   @default("DRAFT")
   belowThreshold  Boolean  @default(false)
   approverNotes   String?
@@ -269,6 +280,9 @@ model Client {
   referralsMade     Referral[] @relation("ReferralMadeBy")
   referralsReceived Referral[] @relation("ReferralFor")
   employees         User[]     @relation("ClientEmployees")
+
+  // Occupancy module
+  allocations       Allocation[]
 }
 
 model Contract {
@@ -285,6 +299,8 @@ model Contract {
   filePath        String?  // uploaded existing contract
   ocrParsedJson   String?  @db.Text // OCR result (renew date, terms etc.)
   createdAt       DateTime @default(now())
+
+  allocations     Allocation[]   // occupancy module
 }
 
 // ============= VENDORS / PROCUREMENT =============
@@ -433,6 +449,7 @@ model MeetingRoom {
   active    Boolean  @default(true)
 
   bookings  Booking[]
+  spaces    Space[]   // occupancy module bridge
 }
 
 model Booking {
@@ -643,5 +660,191 @@ model Seat {
   partialOccupancy Boolean @default(false)  // true = orange (client took cabin but not this seat)
   createdAt     DateTime @default(now())
 
+  spaces        Space[]  // occupancy module bridge
+
   @@unique([centerId, number])
+}
+
+// ============= OCCUPANCY MODULE =============
+// Additive layer over Center/Cabin/Seat/MeetingRoom. Space is the unified occupancy unit;
+// it bridges back to the existing Seat/Cabin/MeetingRoom rows via optional FKs so the current
+// seatmap/bookings keep working. Status here is kept in sync with Seat.occupied (see lib/occupancy).
+
+enum SpaceType {
+  DEDICATED_SEAT
+  HOT_DESK
+  CABIN
+  MEETING_ROOM
+  PRIVATE_OFFICE
+  VIRTUAL_OFFICE
+}
+
+enum SpaceStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  MAINTENANCE
+  BLOCKED
+}
+
+enum AllocationStatus {
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  TRANSFERRED
+}
+
+model Floor {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  name      String          // "Ground", "1st Floor"
+  level     Int             // 0,1,2 … for ordering
+  createdAt DateTime @default(now())
+
+  zones     Zone[]
+  spaces    Space[]
+
+  @@unique([centerId, level])
+  @@index([centerId])
+}
+
+model Zone {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  floorId   String?
+  floor     Floor?   @relation(fields: [floorId], references: [id])
+  name      String          // "North Wing", "Quiet Zone"
+  createdAt DateTime @default(now())
+
+  spaces    Space[]
+
+  @@index([centerId])
+  @@index([floorId])
+}
+
+model Space {
+  id        String      @id @default(cuid())
+  code      String                       // human code e.g. "F2-Z1-S05"
+  name      String
+  type      SpaceType
+  capacity  Int         @default(1)
+  status    SpaceStatus @default(AVAILABLE)
+
+  centerId  String
+  center    Center      @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  floorId   String?
+  floor     Floor?      @relation(fields: [floorId], references: [id])
+  zoneId    String?
+  zone      Zone?       @relation(fields: [zoneId], references: [id])
+
+  // Optional bridges to existing models (one set per Space, depending on type)
+  cabinId       String?
+  cabin         Cabin?       @relation(fields: [cabinId], references: [id])
+  seatId        String?
+  seat          Seat?        @relation(fields: [seatId], references: [id])
+  meetingRoomId String?
+  meetingRoom   MeetingRoom? @relation(fields: [meetingRoomId], references: [id])
+
+  // visual map coordinates (occupancy map view)
+  gridX     Int?
+  gridY     Int?
+
+  deletedAt DateTime?                     // soft delete only
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  allocations  Allocation[]
+  reservations Reservation[]
+  transfers    SpaceTransfer[]
+
+  @@unique([centerId, code])
+  @@index([centerId, status])
+  @@index([floorId])
+  @@index([zoneId])
+  @@index([type, status])
+}
+
+model Allocation {
+  id            String  @id @default(cuid())
+  spaceId       String
+  space         Space   @relation(fields: [spaceId], references: [id])
+  clientId      String
+  client        Client  @relation(fields: [clientId], references: [id])
+  contractId    String?                       // reuse Contract as the agreement
+  contract      Contract? @relation(fields: [contractId], references: [id])
+
+  seatsTaken    Int      @default(1)          // partial cabin/floor allocation
+  startDate     DateTime
+  endDate       DateTime?
+  status        AllocationStatus @default(ACTIVE)
+
+  allocatedById String
+  allocatedBy   User     @relation(fields: [allocatedById], references: [id])
+
+  deletedAt     DateTime?                      // soft delete only
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  history       OccupancyHistory[]
+
+  @@index([clientId])
+  @@index([spaceId, status])
+  @@index([status, endDate])                   // expiring-soon queries
+}
+
+// Append-only ledger. NEVER updated or deleted — one row per occupancy event.
+model OccupancyHistory {
+  id            String      @id @default(cuid())
+  allocationId  String?
+  allocation    Allocation? @relation(fields: [allocationId], references: [id])
+  spaceId       String
+  clientId      String?
+  prevClientId  String?                        // for transfers
+  event         String                         // ALLOCATED|RELEASED|TRANSFERRED|EXPIRED|RESERVED|RESERVATION_EXPIRED
+  startDate     DateTime?
+  endDate       DateTime?
+  vacatedAt     DateTime?
+  actorId       String?
+  meta          String?     @db.Text           // JSON snapshot
+  createdAt     DateTime    @default(now())
+
+  @@index([spaceId])
+  @@index([clientId])
+  @@index([allocationId])
+}
+
+model Reservation {
+  id           String   @id @default(cuid())
+  spaceId      String
+  space        Space    @relation(fields: [spaceId], references: [id])
+  reservedById String
+  reservedBy   User     @relation(fields: [reservedById], references: [id])
+  clientId     String?                          // optional held-for client
+  reservedAt   DateTime @default(now())
+  expiresAt    DateTime
+  released     Boolean  @default(false)         // cron sets true on expiry/consumption
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt, released])                // cron sweep
+  @@index([spaceId])
+}
+
+model SpaceTransfer {
+  id               String   @id @default(cuid())
+  spaceId          String
+  space            Space    @relation(fields: [spaceId], references: [id])
+  fromClientId     String?
+  toClientId       String?
+  fromAllocationId String?
+  toAllocationId   String?
+  batchId          String?                       // groups a bulk transfer
+  transferredById  String
+  reason           String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([batchId])
+  @@index([spaceId])
 }
