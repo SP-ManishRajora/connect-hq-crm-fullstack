@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtINR, fmtDate } from "@/lib/utils";
+import ComboBox from "@/components/ComboBox";
 
 const ASSIGN = ["IT", "OPS", "VENDOR"];
 
@@ -11,19 +12,55 @@ export default function RepairsClient({ role, repairs, categories, centers }: an
   const [showCat, setShowCat] = useState(false);
   const [r, setR] = useState<any>({ centerId: "", category: "", description: "", assignedTo: "OPS", cost: 0 });
   const [newCat, setNewCat] = useState("");
+  // Local copy of category names so a category added via the combobox appears immediately.
+  const [catNames, setCatNames] = useState<string[]>(categories.map((c: any) => c.name));
 
   const isAdmin = role === "ADMIN" || role === "OWNER";
 
+  // Persist a brand-new repair category (admin-only) and select it in the form.
+  async function createCategory(name: string): Promise<string | null> {
+    const normalized = name.toUpperCase().replace(/\s+/g, "_");
+    const res = await fetch("/api/repair-categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: normalized }) });
+    if (res.ok) {
+      setCatNames((prev) => (prev.includes(normalized) ? prev : [...prev, normalized].sort()));
+      router.refresh();
+      return normalized;
+    }
+    const j = await res.json().catch(() => ({}));
+    alert(j.error || "Could not add category (admin only).");
+    return null;
+  }
+
+  // Combobox change: if the value is a new category, create it (if allowed) before selecting.
+  async function onCategoryChange(val: string) {
+    const v = val.trim();
+    if (v && !catNames.includes(v) && !catNames.includes(v.toUpperCase().replace(/\s+/g, "_"))) {
+      if (!isAdmin) { alert("New categories can only be added by an Admin/Owner."); return; }
+      const created = await createCategory(v);
+      if (created) setR((cur: any) => ({ ...cur, category: created }));
+      return;
+    }
+    setR((cur: any) => ({ ...cur, category: v }));
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!r.category.trim()) { alert("Category is required."); return; }
     const res = await fetch("/api/repairs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) });
-    if (res.ok) { setShow(false); router.refresh(); }
+    if (res.ok) {
+      setShow(false);
+      setR({ centerId: "", category: "", description: "", assignedTo: "OPS", cost: 0 });
+      router.refresh();
+    }
   }
   async function addCat(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/repair-categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newCat.toUpperCase().replace(/\s+/g, "_") }) });
-    if (res.ok) { setNewCat(""); setShowCat(false); router.refresh(); }
-    else alert("Failed (admin only)");
+    const normalized = newCat.toUpperCase().replace(/\s+/g, "_");
+    const res = await fetch("/api/repair-categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: normalized }) });
+    if (res.ok) {
+      setCatNames((prev) => (prev.includes(normalized) ? prev : [...prev, normalized].sort()));
+      setNewCat(""); setShowCat(false); router.refresh();
+    } else alert("Failed (admin only)");
   }
   async function resolve(id: string) {
     await fetch(`/api/repairs/${id}/resolve`, { method: "POST" });
@@ -65,10 +102,14 @@ export default function RepairsClient({ role, repairs, categories, centers }: an
             </select>
           </div>
           <div><label className="label">Category *</label>
-            <select className="input" required value={r.category} onChange={(e) => setR({ ...r, category: e.target.value })}>
-              <option value="">— Select —</option>
-              {categories.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
+            <ComboBox
+              value={r.category}
+              onChange={onCategoryChange}
+              options={catNames}
+              placeholder="Select category"
+              allowAdd={isAdmin}
+            />
+            {!isAdmin && <p className="text-xs text-gray-400 mt-0.5">Only Admin/Owner can add new categories.</p>}
           </div>
           <div><label className="label">Assign to</label>
             <select className="input" value={r.assignedTo} onChange={(e) => setR({ ...r, assignedTo: e.target.value })}>

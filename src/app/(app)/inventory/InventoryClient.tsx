@@ -2,22 +2,35 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtINR } from "@/lib/utils";
+import ComboBox from "@/components/ComboBox";
 
 const INV_CATS = ["TEA_COFFEE", "HOUSEKEEPING", "STATIONERY", "OTHER"];
 const ASSET_CATS = ["CHAIR", "DESK", "AC", "LIGHT", "NETWORK_EQUIPMENT", "KITCHEN", "OTHER"];
 
 export default function InventoryClient({ inventory, assets, centers }: any) {
   const router = useRouter();
+
+  // Category suggestions = the known defaults + any category already used by existing items.
+  // The field is a searchable combobox: type to filter these, or type a brand-new category.
+  const invCategoryOptions = Array.from(
+    new Set([...INV_CATS, ...inventory.map((i: any) => i.category).filter(Boolean)]),
+  ).sort();
   const [tab, setTab] = useState<"INV" | "ASSET">("INV");
   const [showInv, setShowInv] = useState(false);
   const [showAsset, setShowAsset] = useState(false);
-  const [inv, setInv] = useState<any>({ centerId: "", name: "", category: "TEA_COFFEE", unit: "pkts", currentStock: 0, threshold: 0 });
+  const [inv, setInv] = useState<any>({ centerId: "", name: "", category: "", unit: "pkts", currentStock: 0, threshold: 0 });
   const [asset, setAsset] = useState<any>({ centerId: "", name: "", category: "CHAIR", serialNo: "", location: "", cost: 0 });
 
   async function saveInv(e: React.FormEvent) {
     e.preventDefault();
-    const r = await fetch("/api/inventory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(inv) });
-    if (r.ok) { setShowInv(false); router.refresh(); }
+    const category = inv.category.trim();
+    if (!category) { alert("Category is required."); return; }
+    const r = await fetch("/api/inventory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...inv, category }) });
+    if (r.ok) {
+      setShowInv(false);
+      setInv({ centerId: "", name: "", category: "", unit: "pkts", currentStock: 0, threshold: 0 });
+      router.refresh();
+    }
   }
   async function saveAsset(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +65,12 @@ export default function InventoryClient({ inventory, assets, centers }: any) {
               </div>
               <div><label className="label">Name *</label><input className="input" required value={inv.name} onChange={(e) => setInv({ ...inv, name: e.target.value })} /></div>
               <div><label className="label">Category</label>
-                <select className="input" value={inv.category} onChange={(e) => setInv({ ...inv, category: e.target.value })}>{INV_CATS.map((c) => <option key={c}>{c}</option>)}</select>
+                <ComboBox
+                  value={inv.category}
+                  onChange={(val) => setInv({ ...inv, category: val })}
+                  options={invCategoryOptions}
+                  placeholder="Select category"
+                />
               </div>
               <div><label className="label">Unit</label><input className="input" value={inv.unit} onChange={(e) => setInv({ ...inv, unit: e.target.value })} /></div>
               <div><label className="label">Current Stock</label><input className="input" type="number" value={inv.currentStock} onChange={(e) => setInv({ ...inv, currentStock: Number(e.target.value) })} /></div>
