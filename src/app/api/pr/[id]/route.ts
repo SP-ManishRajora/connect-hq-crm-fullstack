@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/rbac";
 import { logAction } from "@/lib/audit";
 
 // Purchase Request status lifecycle. Kept as strings (matches the schema default "OPEN").
-export const PR_STATUSES = ["OPEN", "APPROVED", "REJECTED", "ORDERED", "CLOSED"] as const;
+const PR_STATUSES = ["OPEN", "APPROVED", "REJECTED", "ORDERED", "CLOSED"] as const;
 
 // PATCH /api/pr/[id] — update a Purchase Request's status. Restricted to Accounts + Admin/Owner.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
