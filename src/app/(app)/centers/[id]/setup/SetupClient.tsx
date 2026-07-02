@@ -12,7 +12,22 @@ async function uploadFile(file: File, folder: string): Promise<string> {
   const j = await r.json(); return j.path;
 }
 
-export default function SetupClient({ center, cabins, openSeats, inventory, clients }: any) {
+const isPdf = (p: string) => /\.pdf($|\?)/i.test(p);
+
+// A floor-plan thumbnail that renders an image OR a PDF chip. size = tailwind w/h class.
+function PlanThumb({ src, size, onClick, alt }: { src: string; size: string; onClick?: () => void; alt?: string }) {
+  if (isPdf(src)) {
+    return (
+      <button type="button" onClick={onClick} title="Preview PDF" className={`${size} rounded border bg-rose-50 text-rose-600 flex flex-col items-center justify-center gap-0.5 hover:ring-2 hover:ring-brand-500 transition`}>
+        <span className="text-lg">📄</span>
+        <span className="text-[9px] font-medium">PDF</span>
+      </button>
+    );
+  }
+  return <img src={src} className={`${size} object-cover rounded border cursor-zoom-in hover:ring-2 hover:ring-brand-500 transition`} alt={alt || ""} onClick={onClick} title="Click to preview" />;
+}
+
+export default function SetupClient({ center, cabins, openSeats, inventory, clients, floors = [] }: any) {
   const router = useRouter();
   const [tab, setTab] = useState<"MAP" | "CABINS" | "ASSIGN" | "INVENTORY">("MAP");
 
@@ -26,6 +41,31 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
       body: JSON.stringify({ mapImagePath: mapImage || null, commonAreaPhotos }),
     });
     if (r.ok) { alert("Saved"); router.refresh(); }
+  }
+
+  // === Floors (each requires at least one floor plan) ===
+  const [newFloor, setNewFloor] = useState<{ name: string; plans: string[] }>({ name: "", plans: [] });
+  const [savingFloor, setSavingFloor] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null); // full-size floor-plan lightbox
+
+  async function addFloor() {
+    if (!newFloor.name.trim()) { alert("Enter a floor name."); return; }
+    if (newFloor.plans.length < 1) { alert("Upload at least one floor plan image."); return; }
+    setSavingFloor(true);
+    const r = await fetch(`/api/centers/${center.id}/floors`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newFloor.name.trim(), planImages: newFloor.plans }),
+    });
+    setSavingFloor(false);
+    if (r.ok) { setNewFloor({ name: "", plans: [] }); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to add floor"); }
+  }
+
+  async function deleteFloor(floorId: string) {
+    if (!confirm("Delete this floor? Its plan images will be removed.")) return;
+    const r = await fetch(`/api/centers/${center.id}/floors?floorId=${floorId}`, { method: "DELETE" });
+    if (r.ok) router.refresh();
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to delete floor"); }
   }
 
   // === Cabin add ===
@@ -94,6 +134,70 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
             <label className="label">Floor Map (PNG/JPG)</label>
             <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setMapImage(await uploadFile(f, "centers")); }} />
             {mapImage && <img src={mapImage} className="mt-2 max-w-full rounded border" alt="floor map" />}
+          </div>
+
+          {/* Floors — each floor requires at least one floor plan image */}
+          <div className="border-t pt-4">
+            <label className="label">Floors</label>
+            <p className="muted text-xs mb-2">Add each floor of this center. Every floor must have at least one floor-plan image.</p>
+
+            {/* Existing floors */}
+            <div className="space-y-3">
+              {floors.map((f: any) => {
+                const plans: string[] = f.planImages ? JSON.parse(f.planImages) : [];
+                return (
+                  <div key={f.id} className="border rounded-md p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium text-sm">{f.name} <span className="muted text-xs">(level {f.level})</span></div>
+                      <button type="button" className="text-red-500 text-xs" onClick={() => deleteFloor(f.id)}>Delete</button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {plans.map((p, i) => (
+                        <PlanThumb key={i} src={p} size="w-24 h-24" onClick={() => setPreview(p)} alt={`${f.name} plan ${i + 1}`} />
+                      ))}
+                      {plans.length === 0 && <span className="text-xs text-rose-500">No plan</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {floors.length === 0 && <p className="muted text-sm">No floors added yet.</p>}
+            </div>
+
+            {/* Add a floor */}
+            <div className="border border-dashed rounded-md p-3 mt-3 space-y-2">
+              <p className="text-xs font-medium text-gray-600">Add a floor</p>
+              <input
+                className="input"
+                placeholder="Floor name (e.g. Ground, 1st Floor)"
+                value={newFloor.name}
+                onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
+              />
+              <div>
+                <label className="label text-xs">Floor plan(s) — image or PDF <span className="text-rose-500">*</span></label>
+                <input type="file" accept="image/*,application/pdf" multiple onChange={async (e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (!files.length) return;
+                  const ps = await Promise.all(files.map((f) => uploadFile(f, "floors")));
+                  setNewFloor((cur) => ({ ...cur, plans: [...cur.plans, ...ps] }));
+                }} />
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {newFloor.plans.map((p, i) => (
+                    <div key={i} className="relative">
+                      <PlanThumb src={p} size="w-20 h-20" onClick={() => setPreview(p)} />
+                      <button type="button" className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" onClick={() => setNewFloor((cur) => ({ ...cur, plans: cur.plans.filter((_, k) => k !== i) }))}>×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-primary text-sm disabled:opacity-50"
+                disabled={savingFloor || !newFloor.name.trim() || newFloor.plans.length < 1}
+                onClick={addFloor}
+              >
+                {savingFloor ? "Adding…" : "Add Floor"}
+              </button>
+            </div>
           </div>
           <div>
             <label className="label">Common area photos</label>
@@ -229,6 +333,21 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Floor-plan full-size preview (lightbox) — image or PDF */}
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreview(null)}>
+          {isPdf(preview) ? (
+            <div className="w-full h-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+              <iframe src={preview} title="floor plan PDF" className="w-full h-full rounded bg-white" />
+              <a href={preview} target="_blank" rel="noreferrer" className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm underline">Open PDF in new tab</a>
+            </div>
+          ) : (
+            <img src={preview} className="max-w-full max-h-full rounded shadow-lg" alt="floor plan preview" />
+          )}
+          <button type="button" className="absolute top-4 right-4 text-white text-2xl leading-none" onClick={() => setPreview(null)}>×</button>
         </div>
       )}
     </div>

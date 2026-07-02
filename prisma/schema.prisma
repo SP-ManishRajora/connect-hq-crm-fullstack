@@ -700,6 +700,7 @@ model Floor {
   center    Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
   name      String          // "Ground", "1st Floor"
   level     Int             // 0,1,2 … for ordering
+  planImages String? @db.Text // JSON array of floor-plan image paths (at least one required)
   createdAt DateTime @default(now())
 
   zones     Zone[]

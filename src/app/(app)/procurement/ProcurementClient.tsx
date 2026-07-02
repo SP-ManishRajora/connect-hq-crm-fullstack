@@ -4,14 +4,25 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { fmtINR, fmtDate } from "@/lib/utils";
 
 const PO_CATS = ["TEA_COFFEE", "HOUSEKEEPING", "INTERNET", "ASSET", "REPAIR", "OTHER"];
+const PR_STATUSES = ["OPEN", "APPROVED", "REJECTED", "ORDERED", "CLOSED"];
 
-export default function ProcurementClient({ prs, pos, vendors, centers }: any) {
+export default function ProcurementClient({ prs, pos, vendors, centers, role }: any) {
   const router = useRouter();
+  // Only Accounts + Admin/Owner may change a PR's status.
+  const canEditPRStatus = role === "ADMIN" || role === "OWNER" || role === "ACCOUNTS";
+
+  async function updatePRStatus(id: string, status: string) {
+    const r = await fetch(`/api/pr/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    if (r.ok) router.refresh();
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to update status"); }
+  }
+
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") === "PO" ? "PO" : "PR";
   const [tab, setTab] = useState<"PR" | "PO">(initialTab);
   const [showPR, setShowPR] = useState(false);
   const [showPO, setShowPO] = useState(false);
+  const [viewPR, setViewPR] = useState<any>(null);
   const [pr, setPr] = useState<any>({ centerId: "", reason: "", items: [{ item: "", qty: 1, expectedRate: 0 }] });
   const [po, setPo] = useState<any>({ vendorId: "", centerId: "", category: "OTHER", isRecurring: false, recurrence: "MONTHLY", items: [{ item: "", qty: 1, rate: 0 }], prId: "" });
 
@@ -76,7 +87,7 @@ export default function ProcurementClient({ prs, pos, vendors, centers }: any) {
           )}
           <div className="card overflow-x-auto">
             <table className="table">
-              <thead><tr><th>Date</th><th>Center</th><th>Raised By</th><th>Reason</th><th>Items</th><th>Status</th></tr></thead>
+              <thead><tr><th>Date</th><th>Center</th><th>Raised By</th><th>Reason</th><th>Items</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {prs.map((p: any) => {
                   const items = JSON.parse(p.itemsJson || "[]");
@@ -87,11 +98,26 @@ export default function ProcurementClient({ prs, pos, vendors, centers }: any) {
                       <td>{p.raisedBy?.name}</td>
                       <td>{p.reason}</td>
                       <td className="text-xs">{items.map((i: any, k: number) => <div key={k}>{i.item} × {i.qty}</div>)}</td>
-                      <td><span className="badge bg-amber-100 text-amber-700">{p.status}</span></td>
+                      <td>
+                        {canEditPRStatus ? (
+                          <select
+                            className="input py-1 text-xs"
+                            title="Update status"
+                            aria-label="Update PR status"
+                            value={p.status}
+                            onChange={(e) => updatePRStatus(p.id, e.target.value)}
+                          >
+                            {PR_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        ) : (
+                          <span className="badge bg-amber-100 text-amber-700">{p.status}</span>
+                        )}
+                      </td>
+                      <td><button type="button" className="btn-ghost text-xs" onClick={() => setViewPR(p)}>View</button></td>
                     </tr>
                   );
                 })}
-                {prs.length === 0 && <tr><td colSpan={6} className="text-center text-gray-400 py-8">No PRs</td></tr>}
+                {prs.length === 0 && <tr><td colSpan={7} className="text-center text-gray-400 py-8">No PRs</td></tr>}
               </tbody>
             </table>
           </div>
@@ -175,6 +201,57 @@ export default function ProcurementClient({ prs, pos, vendors, centers }: any) {
           </div>
         </>
       )}
+
+      {/* View Purchase Request */}
+      {viewPR && (() => {
+        const items = JSON.parse(viewPR.itemsJson || "[]");
+        const total = items.reduce((s: number, i: any) => s + (Number(i.qty) || 0) * (Number(i.expectedRate) || 0), 0);
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setViewPR(null)} />
+            <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[94%] max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-xl p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-semibold text-lg">Purchase Request</h2>
+                  <p className="text-xs text-gray-500">{fmtDate(viewPR.createdAt)} · {viewPR.center?.name}</p>
+                </div>
+                <span className="badge bg-amber-100 text-amber-700">{viewPR.status}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="muted">Raised by:</span> {viewPR.raisedBy?.name || "—"}</div>
+                <div><span className="muted">Center:</span> {viewPR.center?.name || "—"}</div>
+                <div className="col-span-2"><span className="muted">Reason:</span> {viewPR.reason || "—"}</div>
+              </div>
+
+              <div>
+                <label className="label">Items</label>
+                <table className="table text-sm">
+                  <thead><tr><th>Item</th><th>Qty</th><th>Expected ₹</th><th>Line</th></tr></thead>
+                  <tbody>
+                    {items.map((i: any, k: number) => (
+                      <tr key={k}>
+                        <td>{i.item}</td>
+                        <td>{i.qty}</td>
+                        <td>{i.expectedRate ? fmtINR(Number(i.expectedRate)) : "—"}</td>
+                        <td>{fmtINR((Number(i.qty) || 0) * (Number(i.expectedRate) || 0))}</td>
+                      </tr>
+                    ))}
+                    {items.length === 0 && <tr><td colSpan={4} className="text-center text-gray-400 py-3">No items</td></tr>}
+                  </tbody>
+                  {items.length > 0 && (
+                    <tfoot><tr><td colSpan={3} className="text-right font-medium">Estimated total</td><td className="font-medium">{fmtINR(total)}</td></tr></tfoot>
+                  )}
+                </table>
+              </div>
+
+              <div className="flex justify-end">
+                <button type="button" className="btn-ghost text-sm" onClick={() => setViewPR(null)}>Close</button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
