@@ -8,6 +8,11 @@ const ACTION_LABELS: Record<string, string> = {
   PROPOSAL_REJECTED: "Proposal Rejected",
   PROPOSAL_ACCEPTED: "Proposal Accepted",
   INVOICE_SENT: "Invoice Sent",
+  LEAD_UPDATED: "Lead Updated",
+  LEAD_STATUS_UPDATED: "Lead Status Updated",
+  LEAD_DELETED: "Lead Deleted",
+  REFERRAL_UPDATED: "Referral Updated",
+  REFERRAL_DELETED: "Referral Deleted",
 };
 
 const ACTION_COLORS: Record<string, string> = {
@@ -17,7 +22,42 @@ const ACTION_COLORS: Record<string, string> = {
   PROPOSAL_REJECTED: "bg-red-100 text-red-800",
   PROPOSAL_ACCEPTED: "bg-purple-100 text-purple-800",
   INVOICE_SENT: "bg-amber-100 text-amber-800",
+  LEAD_UPDATED: "bg-blue-100 text-blue-800",
+  LEAD_STATUS_UPDATED: "bg-indigo-100 text-indigo-800",
+  LEAD_DELETED: "bg-red-100 text-red-800",
+  REFERRAL_UPDATED: "bg-blue-100 text-blue-800",
+  REFERRAL_DELETED: "bg-red-100 text-red-800",
 };
+
+// Render a log's `meta` JSON into a readable string, handling our nested
+// `changed: {field: {from, to}}` diffs and `snapshot: {...}` delete records.
+function formatMeta(metaStr: string | null): string {
+  if (!metaStr) return "—";
+  let m: any;
+  try { m = JSON.parse(metaStr); } catch { return metaStr; }
+
+  if (m.changed && typeof m.changed === "object") {
+    const parts = Object.entries(m.changed).map(([field, diff]: [string, any]) =>
+      diff && typeof diff === "object" && "from" in diff
+        ? `${field}: ${fmtVal(diff.from)} → ${fmtVal(diff.to)}`
+        : `${field}: ${fmtVal(diff)}`,
+    );
+    return parts.length ? parts.join(" · ") : "(no fields changed)";
+  }
+  if (m.snapshot && typeof m.snapshot === "object") {
+    return "Deleted: " + Object.entries(m.snapshot)
+      .filter(([k]) => !["id", "createdAt", "updatedAt"].includes(k))
+      .map(([k, v]) => `${k}: ${fmtVal(v)}`)
+      .join(" · ");
+  }
+  return Object.entries(m).map(([k, v]) => `${k}: ${fmtVal(v)}`).join(" · ");
+}
+
+function fmtVal(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -56,6 +96,8 @@ export default function AuditLogsPage() {
           <option value="Client">Client</option>
           <option value="Proposal">Proposal</option>
           <option value="ClientInvoice">Invoice</option>
+          <option value="Lead">Lead</option>
+          <option value="Referral">Referral</option>
         </select>
         {(filterAction || filterType) && (
           <button type="button" className="text-sm text-gray-500 hover:text-gray-800" onClick={() => { setFilterAction(""); setFilterType(""); }}>
@@ -100,13 +142,8 @@ export default function AuditLogsPage() {
                     {log.targetType && <span>{log.targetType}</span>}
                     {log.targetId && <span className="ml-1 text-xs text-gray-400 font-mono">{log.targetId.slice(0, 8)}…</span>}
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 max-w-xs truncate">
-                    {log.meta ? (() => {
-                      try {
-                        const m = JSON.parse(log.meta);
-                        return Object.entries(m).map(([k, v]) => `${k}: ${v}`).join(" · ");
-                      } catch { return log.meta; }
-                    })() : "—"}
+                  <td className="px-4 py-3 text-xs text-gray-500 max-w-md" title={formatMeta(log.meta)}>
+                    {formatMeta(log.meta)}
                   </td>
                 </tr>
               ))}
