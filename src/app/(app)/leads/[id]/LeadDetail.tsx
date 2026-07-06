@@ -13,6 +13,61 @@ export default function LeadDetail({ lead, centers }: any) {
   const [body, setBody] = useState("");
   const [channel, setChannel] = useState("CALL");
 
+  // Inline editing of the lead's core fields (name/company/contact/seats/budget/notes).
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [infoForm, setInfoForm] = useState({
+    name: lead.name || "",
+    company: lead.company || "",
+    email: lead.email || "",
+    phone: lead.phone || "",
+    seatsNeeded: lead.seatsNeeded ?? "",
+    budget: lead.budget ?? "",
+    notes: lead.notes || "",
+  });
+
+  function startEditInfo() {
+    setInfoForm({
+      name: lead.name || "",
+      company: lead.company || "",
+      email: lead.email || "",
+      phone: lead.phone || "",
+      seatsNeeded: lead.seatsNeeded ?? "",
+      budget: lead.budget ?? "",
+      notes: lead.notes || "",
+    });
+    setEditingInfo(true);
+  }
+
+  async function saveInfo() {
+    if (!infoForm.name.trim()) {
+      alert("Name is required.");
+      return;
+    }
+    setSavingInfo(true);
+    const res = await fetch(`/api/leads/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: infoForm.name.trim(),
+        company: infoForm.company.trim() || null,
+        email: infoForm.email.trim() || null,
+        phone: infoForm.phone.trim() || null,
+        seatsNeeded: infoForm.seatsNeeded === "" ? null : Number(infoForm.seatsNeeded),
+        budget: infoForm.budget === "" ? null : Number(infoForm.budget),
+        notes: infoForm.notes.trim() || null,
+      }),
+    });
+    setSavingInfo(false);
+    if (res.ok) {
+      setEditingInfo(false);
+      router.refresh();
+    } else {
+      const detail = await res.json().catch(() => ({}));
+      alert(`Failed (${res.status}): ${detail.error || res.statusText}`);
+    }
+  }
+
   // Inline comment editing: which comment is open, its draft body, and which have history expanded.
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
@@ -107,11 +162,77 @@ export default function LeadDetail({ lead, centers }: any) {
 
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card space-y-3">
-          <h2 className="h2">Lead Info</h2>
-          <div><span className="muted">Source:</span> {lead.source}</div>
-          <div><span className="muted">Seats needed:</span> {lead.seatsNeeded || "—"}</div>
-          <div><span className="muted">Budget:</span> {lead.budget ? `₹${lead.budget}` : "—"}</div>
-          <div><span className="muted">Notes:</span> {lead.notes || "—"}</div>
+          <div className="flex items-center justify-between">
+            <h2 className="h2">Lead Info</h2>
+            {!editingInfo && (
+              <button type="button" className="btn-ghost text-sm" onClick={startEditInfo}>
+                Edit
+              </button>
+            )}
+          </div>
+
+          {editingInfo ? (
+            <div className="space-y-2">
+              <div>
+                <label className="label">Name <span className="text-rose-500">*</span></label>
+                <input className="input" title="Name" placeholder="Name" value={infoForm.name}
+                  onChange={(e) => setInfoForm({ ...infoForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Company</label>
+                <input className="input" title="Company" placeholder="Company" value={infoForm.company}
+                  onChange={(e) => setInfoForm({ ...infoForm, company: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Phone</label>
+                  <input className="input" title="Phone" placeholder="Phone" value={infoForm.phone}
+                    onChange={(e) => setInfoForm({ ...infoForm, phone: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Email</label>
+                  <input className="input" title="Email" placeholder="Email" value={infoForm.email}
+                    onChange={(e) => setInfoForm({ ...infoForm, email: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Seats needed</label>
+                  <input className="input" type="number" min="0" title="Seats needed" placeholder="Seats needed" value={infoForm.seatsNeeded}
+                    onChange={(e) => setInfoForm({ ...infoForm, seatsNeeded: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Budget (₹)</label>
+                  <input className="input" type="number" min="0" title="Budget" placeholder="Budget" value={infoForm.budget}
+                    onChange={(e) => setInfoForm({ ...infoForm, budget: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Notes</label>
+                <textarea className="input" rows={3} title="Notes" placeholder="Notes" value={infoForm.notes}
+                  onChange={(e) => setInfoForm({ ...infoForm, notes: e.target.value })} />
+              </div>
+              <div className="flex gap-2">
+                <button type="button" className="btn-primary disabled:opacity-50"
+                  disabled={savingInfo || !infoForm.name.trim()} onClick={saveInfo}>
+                  {savingInfo ? "Saving…" : "Save"}
+                </button>
+                <button type="button" className="btn-ghost" onClick={() => setEditingInfo(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div><span className="muted">Source:</span> {lead.source}</div>
+              <div><span className="muted">Company:</span> {lead.company || "—"}</div>
+              <div><span className="muted">Phone:</span> {lead.phone || "—"}</div>
+              <div><span className="muted">Email:</span> {lead.email || "—"}</div>
+              <div><span className="muted">Seats needed:</span> {lead.seatsNeeded || "—"}</div>
+              <div><span className="muted">Budget:</span> {lead.budget ? `₹${lead.budget}` : "—"}</div>
+              <div><span className="muted">Notes:</span> {lead.notes || "—"}</div>
+            </>
+          )}
 
           <div className="pt-3 border-t">
             <label className="label">Status</label>
