@@ -38,7 +38,9 @@ function initials(name: string) {
 }
 
 export default function MapClient({ centers, clients, canManage }: { centers: Center[]; clients: ClientLite[]; canManage: boolean }) {
-  const [centerId, setCenterId] = useState(centers[0]?.id || "");
+  // Default to "All centers" (empty) so the map is never silently empty when the
+  // first center happens to have no spaces. User can still filter to one center.
+  const [centerId, setCenterId] = useState("");
   const [type, setType] = useState("");
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");

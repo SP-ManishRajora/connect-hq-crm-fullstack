@@ -179,6 +179,94 @@ export default function SpacesClient({ centers, clients, canManage }: { centers:
     }
   }
 
+  const centerOptions = centers.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+  const typeOptions = TYPES.map((t) => `<option value="${t}">${t.replace(/_/g, " ")}</option>`).join("");
+
+  // POST a create-space request, report the outcome, reload.
+  async function createRun(body: any) {
+    setBusy("__create__");
+    try {
+      const r = await fetch("/api/occupancy/spaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { await Swal.fire({ icon: "success", title: "Created", timer: 1400, showConfirmButton: false }); await load(); }
+      else { Swal.fire({ icon: "error", title: "Failed", text: j.error || `HTTP ${r.status}`, confirmButtonColor: "#4f46e5" }); }
+      return r.ok;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Create a single space.
+  async function addSpace() {
+    const { value: f } = await Swal.fire({
+      title: "Add space", focusConfirm: false, showCancelButton: true, confirmButtonText: "Create", confirmButtonColor: "#4f46e5",
+      html:
+        `<select id="s-center" class="swal2-input"><option value="">— center —</option>${centerOptions}</select>` +
+        `<select id="s-type" class="swal2-input">${typeOptions}</select>` +
+        `<input id="s-code" class="swal2-input" placeholder="Code e.g. F1-S01">` +
+        `<input id="s-name" class="swal2-input" placeholder="Name e.g. Seat 1">` +
+        `<input id="s-cap" type="number" min="1" value="1" class="swal2-input" placeholder="Capacity">`,
+      preConfirm: () => {
+        const centerId = (document.getElementById("s-center") as HTMLSelectElement).value;
+        const type = (document.getElementById("s-type") as HTMLSelectElement).value;
+        const code = (document.getElementById("s-code") as HTMLInputElement).value.trim();
+        const name = (document.getElementById("s-name") as HTMLInputElement).value.trim();
+        const capacity = Number((document.getElementById("s-cap") as HTMLInputElement).value);
+        if (!centerId || !code || !name) { Swal.showValidationMessage("Center, code and name are required"); return false; }
+        if (!Number.isInteger(capacity) || capacity < 1) { Swal.showValidationMessage("Capacity must be ≥ 1"); return false; }
+        return { centerId, type, code, name, capacity };
+      },
+    });
+    if (f) await createRun(f);
+  }
+
+  // Bulk-create N spaces with an auto-incrementing numeric suffix on the code/name.
+  async function addSpacesBulk() {
+    const { value: f } = await Swal.fire({
+      title: "Bulk add spaces", focusConfirm: false, showCancelButton: true, confirmButtonText: "Create", confirmButtonColor: "#4f46e5",
+      html:
+        `<select id="b-center" class="swal2-input"><option value="">— center —</option>${centerOptions}</select>` +
+        `<select id="b-type" class="swal2-input">${typeOptions}</select>` +
+        `<input id="b-prefix" class="swal2-input" placeholder="Code prefix e.g. SEAT-">` +
+        `<input id="b-count" type="number" min="1" max="500" value="10" class="swal2-input" placeholder="How many">` +
+        `<input id="b-start" type="number" min="1" value="1" class="swal2-input" placeholder="Start number">` +
+        `<input id="b-cap" type="number" min="1" value="1" class="swal2-input" placeholder="Capacity each">`,
+      preConfirm: () => {
+        const centerId = (document.getElementById("b-center") as HTMLSelectElement).value;
+        const type = (document.getElementById("b-type") as HTMLSelectElement).value;
+        const prefix = (document.getElementById("b-prefix") as HTMLInputElement).value.trim();
+        const count = Number((document.getElementById("b-count") as HTMLInputElement).value);
+        const start = Number((document.getElementById("b-start") as HTMLInputElement).value);
+        const capacity = Number((document.getElementById("b-cap") as HTMLInputElement).value);
+        if (!centerId || !prefix) { Swal.showValidationMessage("Center and code prefix are required"); return false; }
+        if (!Number.isInteger(count) || count < 1 || count > 500) { Swal.showValidationMessage("Count must be 1–500"); return false; }
+        if (!Number.isInteger(capacity) || capacity < 1) { Swal.showValidationMessage("Capacity must be ≥ 1"); return false; }
+        return { centerId, type, prefix, count, start: Number.isInteger(start) && start > 0 ? start : 1, capacity };
+      },
+    });
+    if (!f) return;
+
+    // Create sequentially so a duplicate-code 409 stops cleanly and we can report progress.
+    let ok = 0; let failed = 0; let firstError = "";
+    for (let i = 0; i < f.count; i++) {
+      const n = f.start + i;
+      const code = `${f.prefix}${n}`;
+      const r = await fetch("/api/occupancy/spaces", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ centerId: f.centerId, type: f.type, code, name: code, capacity: f.capacity }),
+      });
+      if (r.ok) ok++;
+      else { failed++; if (!firstError) { const j = await r.json().catch(() => ({})); firstError = j.error || `HTTP ${r.status}`; } }
+    }
+    await load();
+    await Swal.fire({
+      icon: failed ? (ok ? "warning" : "error") : "success",
+      title: `Created ${ok} space${ok === 1 ? "" : "s"}`,
+      text: failed ? `${failed} failed. First error: ${firstError}` : undefined,
+      confirmButtonColor: "#4f46e5",
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -186,7 +274,11 @@ export default function SpacesClient({ centers, clients, canManage }: { centers:
           <h1 className="h1">Spaces</h1>
           <p className="muted">{total} space(s){centerId ? " in selected center" : " across all centers"}.</p>
         </div>
-        <Link href="/occupancy" className="btn-ghost text-sm">← Dashboard</Link>
+        <div className="flex gap-2">
+          {canManage && <button type="button" className="btn-ghost text-sm" disabled={busy === "__create__"} onClick={addSpacesBulk}>Bulk add</button>}
+          {canManage && <button type="button" className="btn-primary text-sm" disabled={busy === "__create__"} onClick={addSpace}>+ Add space</button>}
+          <Link href="/occupancy" className="btn-ghost text-sm">← Dashboard</Link>
+        </div>
       </div>
 
       {/* Filters (server-side) */}
