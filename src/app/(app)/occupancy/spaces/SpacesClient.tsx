@@ -143,6 +143,25 @@ export default function SpacesClient({ centers, clients, canManage }: { centers:
     await run(space.id, `/api/occupancy/spaces/${space.id}`, { status: newStatus }, "PUT");
   }
 
+  async function doEditCapacity(space: any) {
+    const { value: cap } = await Swal.fire({
+      title: `Seat capacity — ${space.code}`,
+      input: "number",
+      inputValue: String(space.capacity ?? 1),
+      inputAttributes: { min: "1", step: "1" },
+      showCancelButton: true, confirmButtonText: "Save", confirmButtonColor: "#4f46e5",
+      inputValidator: (v) => {
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 1) return "Capacity must be a whole number of 1 or more";
+        return null;
+      },
+    });
+    if (cap === undefined) return;               // cancelled
+    const n = Number(cap);
+    if (n === space.capacity) return;            // unchanged
+    await run(space.id, `/api/occupancy/spaces/${space.id}`, { capacity: n }, "PUT");
+  }
+
   // Shared request runner: POST/PUT/DELETE → toast → reload.
   async function run(spaceId: string, url: string, body: any, method: "POST" | "PUT" | "DELETE" = "POST") {
     setBusy(spaceId);
@@ -195,10 +214,10 @@ export default function SpacesClient({ centers, clients, canManage }: { centers:
       <div className="card overflow-x-auto">
         <table className="table text-sm">
           <thead>
-            <tr><th>Code</th><th>Name</th><th>Type</th><th>Center</th><th>Status</th><th>Client</th>{canManage && <th>Actions</th>}</tr>
+            <tr><th>Code</th><th>Name</th><th>Type</th><th>Center</th><th>Capacity</th><th>Status</th><th>Client</th>{canManage && <th>Actions</th>}</tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={canManage ? 7 : 6} className="text-center text-gray-400 py-6">Loading…</td></tr>}
+            {loading && <tr><td colSpan={canManage ? 8 : 7} className="text-center text-gray-400 py-6">Loading…</td></tr>}
             {!loading && items.map((s) => {
               const alloc = s.allocations?.[0];
               return (
@@ -207,6 +226,7 @@ export default function SpacesClient({ centers, clients, canManage }: { centers:
                   <td>{s.name}</td>
                   <td className="text-xs">{s.type.replace(/_/g, " ")}</td>
                   <td>{s.center?.name}</td>
+                  <td className="text-center">{s.capacity ?? 1}</td>
                   <td><span className={`badge ${STATUS_CLS[s.status] || ""}`}>{s.status}</span></td>
                   <td className="text-xs">{alloc?.client?.companyName || "—"}</td>
                   {canManage && (
@@ -224,12 +244,13 @@ export default function SpacesClient({ centers, clients, canManage }: { centers:
                       {(s.status === "MAINTENANCE" || s.status === "BLOCKED") && (
                         <button type="button" className="btn-ghost text-xs" disabled={busy === s.id} onClick={() => setSpaceStatus(s, "AVAILABLE")}>Make available</button>
                       )}
+                      <button type="button" className="btn-ghost text-xs" disabled={busy === s.id} onClick={() => doEditCapacity(s)}>Capacity</button>
                     </td>
                   )}
                 </tr>
               );
             })}
-            {!loading && items.length === 0 && <tr><td colSpan={canManage ? 7 : 6} className="text-center text-gray-400 py-8">No spaces match.</td></tr>}
+            {!loading && items.length === 0 && <tr><td colSpan={canManage ? 8 : 7} className="text-center text-gray-400 py-8">No spaces match.</td></tr>}
           </tbody>
         </table>
 

@@ -75,6 +75,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (data.status) {
       await logAction({ userId: u.id, action: "SPACE_STATUS_CHANGED", targetType: "Space", targetId: space.id, meta: { from: space.status, to: data.status } });
     }
+    if (data.capacity !== undefined && data.capacity !== space.capacity) {
+      await logAction({ userId: u.id, action: "SPACE_CAPACITY_CHANGED", targetType: "Space", targetId: space.id, meta: { changed: { capacity: { from: space.capacity, to: data.capacity } } } });
+    }
     return NextResponse.json(updated);
   } catch (e) {
     return handleError(e);
