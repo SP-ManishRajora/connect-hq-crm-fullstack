@@ -46,6 +46,23 @@ export default function MapClient({ centers, clients, canManage }: { centers: Ce
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Multi-select allocation: when on, clicking AVAILABLE tiles toggles selection
+  // instead of opening the single-seat dialog. All selected seats are then
+  // allocated to one client in a single request.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Record<string, Space>>({});
+  const selectedList = Object.values(selected);
+
+  const clearSelection = useCallback(() => setSelected({}), []);
+  function toggleSelect(s: Space) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[s.id]) delete next[s.id];
+      else next[s.id] = s;
+      return next;
+    });
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     const p = new URLSearchParams();
@@ -160,6 +177,42 @@ export default function MapClient({ centers, clients, canManage }: { centers: Ce
     }
   }
 
+  // Allocate all currently-selected seats to a single client in one request.
+  async function allocateSelected() {
+    if (selectedList.length === 0) return;
+    const codes = selectedList.map((s) => s.code).join(", ");
+    const { value: f } = await Swal.fire({
+      title: `Allocate ${selectedList.length} seat${selectedList.length > 1 ? "s" : ""}`,
+      focusConfirm: false, showCancelButton: true, confirmButtonColor: "#4f46e5", confirmButtonText: "Allocate",
+      html: `<div style="font-size:12px;text-align:left;margin-bottom:8px;color:#6b7280">Seats: ${codes}</div>
+             <select id="c" class="swal2-input"><option value="">— client —</option>${clientOptions}</select>
+             <input id="sd" type="date" class="swal2-input" value="${todayISO()}">
+             <input id="ed" type="date" class="swal2-input" placeholder="End (optional)">`,
+      preConfirm: () => {
+        const clientId = (document.getElementById("c") as HTMLSelectElement).value;
+        const start = (document.getElementById("sd") as HTMLInputElement).value;
+        const end = (document.getElementById("ed") as HTMLInputElement).value;
+        if (!clientId || !start) { Swal.showValidationMessage("Client and start date required"); return false; }
+        return { clientId, start, end };
+      },
+    });
+    if (!f) return;
+    await run("/api/occupancy/allocations", {
+      clientId: f.clientId,
+      items: selectedList.map((s) => ({ spaceId: s.id, seatsTaken: 1 })),
+      startDate: f.start,
+      endDate: f.end || null,
+    });
+    clearSelection();
+    setSelectMode(false);
+  }
+
+  // Tile click: in select mode, toggle AVAILABLE seats; otherwise open the detail dialog.
+  function onTileClick(s: Space) {
+    if (selectMode && canManage && s.status === "AVAILABLE") { toggleSelect(s); return; }
+    openSpace(s);
+  }
+
   const tilePx = Math.round(40 * zoom);
 
   return (
@@ -167,9 +220,22 @@ export default function MapClient({ centers, clients, canManage }: { centers: Ce
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="h1">Occupancy Map</h1>
-          <p className="muted">Click a space to view details{canManage ? " and act" : ""}.</p>
+          <p className="muted">
+            {selectMode
+              ? "Select mode: click available seats to select, then allocate them to one client."
+              : `Click a space to view details${canManage ? " and act" : ""}.`}
+          </p>
         </div>
         <div className="flex gap-2">
+          {canManage && (
+            <button
+              type="button"
+              className={selectMode ? "btn-primary text-sm" : "btn-ghost text-sm"}
+              onClick={() => { setSelectMode((v) => !v); clearSelection(); }}
+            >
+              {selectMode ? "Exit multi-select" : "Multi-select seats"}
+            </button>
+          )}
           <Link href="/occupancy/spaces" className="btn-ghost text-sm">Table view</Link>
           <Link href="/occupancy" className="btn-ghost text-sm">← Dashboard</Link>
         </div>
@@ -226,22 +292,32 @@ export default function MapClient({ centers, clients, canManage }: { centers: Ce
               const tip = `${s.code} — ${s.status}` + (who ? ` — ${who}` : "") + (heldClient ? " (reserved)" : "");
               // On a reserved/occupied tile show the client's initials so the holder is visible at a glance.
               const label = who ? initials(who) : s.code.replace(/^(SEAT|CABIN|ROOM)-/, "");
+              const isSelected = !!selected[s.id];
               return (
               <button
                 key={s.id}
                 type="button"
-                onClick={() => openSpace(s)}
+                onClick={() => onTileClick(s)}
                 title={tip}
-                className={`${TILE[s.status] || "bg-gray-200"} text-white rounded flex items-center justify-center hover:ring-2 hover:ring-brand-500 transition`}
+                className={`${TILE[s.status] || "bg-gray-200"} text-white rounded flex items-center justify-center transition ${isSelected ? "ring-2 ring-offset-1 ring-blue-700 scale-110" : "hover:ring-2 hover:ring-brand-500"}`}
                 style={{ width: tilePx, height: tilePx, fontSize: Math.max(7, Math.round(8 * zoom)) }}
               >
-                {label}
+                {isSelected ? "✓" : label}
               </button>
               );
             })}
           </div>
         </div>
       ))}
+
+      {/* Floating bar for the multi-select allocation flow. */}
+      {selectMode && selectedList.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-full bg-gray-900 text-white shadow-lg px-5 py-3">
+          <span className="text-sm font-medium">{selectedList.length} seat{selectedList.length > 1 ? "s" : ""} selected</span>
+          <button type="button" className="text-xs underline text-gray-300 hover:text-white" onClick={clearSelection}>Clear</button>
+          <button type="button" className="btn-primary text-sm" onClick={allocateSelected}>Allocate to client →</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -23,7 +23,7 @@ import { requireRole } from "@/lib/rbac";
  */
 export async function POST(req: NextRequest) {
   const u = await getSessionUser();
-  if (!u || !requireRole(u.role, ["ADMIN", "OWNER"])) return NextResponse.json({ error: "Admin/Owner only" }, { status: 403 });
+  if (!u || !requireRole(u.role, ["ADMIN", "OWNER", "CENTER_MANAGER"])) return NextResponse.json({ error: "Admin/Owner/Center Manager only" }, { status: 403 });
   const b = await req.json();
   if (!b.name || !b.city || !b.totalSeats) return NextResponse.json({ error: "name, city, totalSeats required" }, { status: 400 });
 

@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/rbac";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const u = await getSessionUser();
-  if (!u || !requireRole(u.role, ["ADMIN", "OWNER"])) return NextResponse.json({ error: "Admin/Owner only" }, { status: 403 });
+  if (!u || !requireRole(u.role, ["ADMIN", "OWNER", "CENTER_MANAGER"])) return NextResponse.json({ error: "Admin/Owner/Center Manager only" }, { status: 403 });
   try {
     const b = await req.json();
     const data: Record<string, unknown> = {};
@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   const u = await getSessionUser();
-  if (!u || !requireRole(u.role, ["ADMIN", "OWNER"])) return NextResponse.json({ error: "Admin/Owner only" }, { status: 403 });
+  if (!u || !requireRole(u.role, ["ADMIN", "OWNER", "CENTER_MANAGER"])) return NextResponse.json({ error: "Admin/Owner/Center Manager only" }, { status: 403 });
   const clients = await prisma.client.count({ where: { centerId: params.id, active: true } });
   if (clients > 0) return NextResponse.json({ error: "Center has active clients — deactivate them first" }, { status: 400 });
   await prisma.center.delete({ where: { id: params.id } }); // cascades to seats/cabins via schema

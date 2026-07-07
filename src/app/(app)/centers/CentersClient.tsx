@@ -25,8 +25,8 @@ export default function CentersClient({ initial, role, myCenterId }: any) {
   const [c, setC] = useState<any>(EMPTY_CENTER);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const isAdmin = role === "ADMIN" || role === "OWNER";
-  const isCM = role === "CENTER_MANAGER";
+  // Center Managers now have full admin-level access to all centers.
+  const isAdmin = role === "ADMIN" || role === "OWNER" || role === "CENTER_MANAGER";
 
   function startEdit(x: any) {
     setEditingId(x.id);
@@ -146,7 +146,7 @@ export default function CentersClient({ initial, role, myCenterId }: any) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {initial.map((x: any) => {
-          const canSetup = isAdmin || (isCM && myCenterId === x.id);
+          const canSetup = isAdmin;
           return (
             <div key={x.id} className="card">
               <div className="flex justify-between items-start">
