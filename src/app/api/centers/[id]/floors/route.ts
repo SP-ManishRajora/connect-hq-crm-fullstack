@@ -38,6 +38,35 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json(floor);
 }
 
+// PATCH /api/centers/[id]/floors — edit a floor's name and/or plan images.
+// Body: { floorId, name?, planImages?: string[] }. planImages, when provided, REPLACES the set.
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const u = await getSessionUser();
+  if (!canManageCenter(u, params.id)) return NextResponse.json({ error: "Not your center" }, { status: 403 });
+
+  const b = await req.json().catch(() => ({}));
+  const floorId = String(b?.floorId || "").trim();
+  if (!floorId) return NextResponse.json({ error: "floorId required" }, { status: 400 });
+
+  const floor = await prisma.floor.findUnique({ where: { id: floorId }, select: { centerId: true } });
+  if (!floor || floor.centerId !== params.id) return NextResponse.json({ error: "Floor not found" }, { status: 404 });
+
+  const data: { name?: string; planImages?: string } = {};
+  if (b.name !== undefined) {
+    const name = String(b.name || "").trim();
+    if (!name) return NextResponse.json({ error: "Floor name cannot be empty." }, { status: 400 });
+    data.name = name;
+  }
+  if (b.planImages !== undefined) {
+    const planImages: string[] = Array.isArray(b.planImages) ? b.planImages.filter(Boolean) : [];
+    data.planImages = JSON.stringify(planImages);
+  }
+  if (Object.keys(data).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+
+  const updated = await prisma.floor.update({ where: { id: floorId }, data });
+  return NextResponse.json(updated);
+}
+
 // DELETE /api/centers/[id]/floors?floorId=... — remove a floor.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const u = await getSessionUser();

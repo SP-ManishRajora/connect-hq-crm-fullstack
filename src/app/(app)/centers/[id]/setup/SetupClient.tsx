@@ -67,12 +67,34 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
     else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to delete floor"); }
   }
 
+  // === Floor edit (rename + manage plan images with preview) ===
+  const [editFloor, setEditFloor] = useState<{ id: string; name: string; plans: string[] } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  function startEditFloor(f: any) {
+    setEditFloor({ id: f.id, name: f.name || "", plans: f.planImages ? JSON.parse(f.planImages) : [] });
+  }
+
+  async function saveEditFloor() {
+    if (!editFloor) return;
+    if (!editFloor.name.trim()) { alert("Floor name cannot be empty."); return; }
+    setSavingEdit(true);
+    const r = await fetch(`/api/centers/${center.id}/floors`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ floorId: editFloor.id, name: editFloor.name.trim(), planImages: editFloor.plans }),
+    });
+    setSavingEdit(false);
+    if (r.ok) { setEditFloor(null); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to update floor"); }
+  }
+
   // === Cabin add ===
-  const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 1, floorId: "", photos: [] as string[] });
+  const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 1, floorId: "", notes: "", photos: [] as string[] });
+  const [cabinDetailsId, setCabinDetailsId] = useState<string | null>(null); // which cabin's details are expanded
   async function addCabin(e: React.FormEvent) {
     e.preventDefault();
     const r = await fetch(`/api/centers/${center.id}/cabins`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newCab) });
-    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 1, floorId: "", photos: [] }); router.refresh(); }
+    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 1, floorId: "", notes: "", photos: [] }); router.refresh(); }
     else { const j = await r.json(); alert(j.error || "Failed"); }
   }
 
@@ -144,18 +166,61 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
             <div className="space-y-3">
               {floors.map((f: any) => {
                 const plans: string[] = f.planImages ? JSON.parse(f.planImages) : [];
+                const isEditing = editFloor?.id === f.id;
                 return (
                   <div key={f.id} className="border rounded-md p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium text-sm">{f.name} <span className="muted text-xs">(level {f.level})</span></div>
-                      <button type="button" className="text-red-500 text-xs" onClick={() => deleteFloor(f.id)}>Delete</button>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {plans.map((p, i) => (
-                        <PlanThumb key={i} src={p} size="w-24 h-24" onClick={() => setPreview(p)} alt={`${f.name} plan ${i + 1}`} />
-                      ))}
-                      {plans.length === 0 && <span className="text-xs muted">No plan uploaded</span>}
-                    </div>
+                    {isEditing ? (
+                      /* ---- Edit mode: rename + manage plan images with preview ---- */
+                      <div className="space-y-2">
+                        <div>
+                          <label className="label text-xs">Floor name <span className="text-rose-500">*</span></label>
+                          <input className="input" value={editFloor!.name} title="Floor name"
+                            onChange={(e) => setEditFloor({ ...editFloor!, name: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="label text-xs">Floor plan(s) — image or PDF <span className="muted">(optional)</span></label>
+                          <input type="file" accept="image/*,application/pdf" multiple onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (!files.length) return;
+                            const ps = await Promise.all(files.map((file) => uploadFile(file, "floors")));
+                            setEditFloor((cur) => cur ? ({ ...cur, plans: [...cur.plans, ...ps] }) : cur);
+                          }} />
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {editFloor!.plans.map((p, i) => (
+                              <div key={i} className="relative">
+                                <PlanThumb src={p} size="w-20 h-20" onClick={() => setPreview(p)} alt={`plan ${i + 1}`} />
+                                <button type="button" className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs"
+                                  onClick={() => setEditFloor((cur) => cur ? ({ ...cur, plans: cur.plans.filter((_, k) => k !== i) }) : cur)}>×</button>
+                              </div>
+                            ))}
+                            {editFloor!.plans.length === 0 && <span className="text-xs muted">No plan uploaded</span>}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" className="btn-primary text-sm disabled:opacity-50" disabled={savingEdit || !editFloor!.name.trim()} onClick={saveEditFloor}>
+                            {savingEdit ? "Saving…" : "Save"}
+                          </button>
+                          <button type="button" className="btn-ghost text-sm" onClick={() => setEditFloor(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ---- View mode ---- */
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium text-sm">{f.name} <span className="muted text-xs">(level {f.level})</span></div>
+                          <div className="flex gap-3">
+                            <button type="button" className="text-brand-600 text-xs" onClick={() => startEditFloor(f)}>Edit</button>
+                            <button type="button" className="text-red-500 text-xs" onClick={() => deleteFloor(f.id)}>Delete</button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {plans.map((p, i) => (
+                            <PlanThumb key={i} src={p} size="w-24 h-24" onClick={() => setPreview(p)} alt={`${f.name} plan ${i + 1}`} />
+                          ))}
+                          {plans.length === 0 && <span className="text-xs muted">No plan uploaded</span>}
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -228,7 +293,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
             <h2 className="h2 sm:col-span-6">Add cabin(s)</h2>
             <div><label className="label">Name</label><input className="input" value={newCab.name} onChange={(e) => setNewCab({ ...newCab, name: e.target.value })} placeholder="e.g. 6-Seater Cabin" /></div>
             <div><label className="label">Capacity</label><input className="input" type="number" value={newCab.capacity} onChange={(e) => setNewCab({ ...newCab, capacity: Number(e.target.value) })} /></div>
-            <div><label className="label">Qty</label><input className="input" type="number" value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
+            <div><label className="label">Qty</label><input className="input" type="number" min="0" value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
             <div><label className="label">Floor <span className="muted">(optional)</span></label>
               <select className="input" title="Floor" value={newCab.floorId} onChange={(e) => setNewCab({ ...newCab, floorId: e.target.value })}>
                 <option value="">— None —</option>
@@ -243,19 +308,59 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
               }} />
               <div className="flex flex-wrap gap-1 mt-1">{newCab.photos.map((p: string, i: number) => <img key={i} src={p} className="w-12 h-12 object-cover rounded border" alt="" />)}</div>
             </div>
-            <div className="sm:col-span-6 flex justify-end"><button className="btn-primary">Add</button></div>
-            <p className="muted text-xs sm:col-span-6">Tip: create groups, e.g. <code>Cabin</code> × cap 6 × qty 3 = 3 cabins × 6 seats. Seats are auto-created (S-numbered).</p>
+            {/* Zero-quantity: capture a note explaining the placeholder cabin. */}
+            {Number(newCab.qty) === 0 && (
+              <div className="sm:col-span-6">
+                <label className="label">Note <span className="text-rose-500">*</span></label>
+                <textarea className="input" rows={2} title="Note" placeholder="Why is this a zero-quantity cabin? (e.g. planned / reserved space, not yet built)"
+                  value={newCab.notes} onChange={(e) => setNewCab({ ...newCab, notes: e.target.value })} />
+              </div>
+            )}
+            <div className="sm:col-span-6 flex justify-end">
+              <button className="btn-primary" disabled={Number(newCab.qty) === 0 && !newCab.notes.trim()}>Add</button>
+            </div>
+            <p className="muted text-xs sm:col-span-6">
+              <strong>Qty</strong> = how many identical cabins to create at once. E.g. <code>Cabin</code> × cap 6 × qty 3 = 3 cabins × 6 seats each (seats auto-created, S-numbered). Set <strong>Qty = 0</strong> to record a placeholder cabin with a note (no seats created).
+            </p>
           </form>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {cabins.map((c: any) => (
-              <div key={c.id} className="card">
-                <div className="font-medium">{c.name} <span className="text-xs text-gray-500">cap {c.capacity} · {c.seats.length} seats</span></div>
-                {c.photos && (
-                  <div className="flex flex-wrap gap-1 mt-2">{(JSON.parse(c.photos) as string[]).map((p, i) => <img key={i} src={p} className="w-16 h-16 object-cover rounded border" alt="" />)}</div>
-                )}
-              </div>
-            ))}
+            {cabins.map((c: any) => {
+              const photos: string[] = c.photos ? JSON.parse(c.photos) : [];
+              const occSeats = c.seats.filter((s: any) => s.occupied).length;
+              const unusedSeats = c.seats.filter((s: any) => s.partialOccupancy).length;
+              const freeSeats = c.seats.length - occSeats - unusedSeats;
+              const floorName = c.floorId ? (floors.find((f: any) => f.id === c.floorId)?.name || null) : null;
+              // Assigned client(s): distinct clients referenced by this cabin's seats.
+              const clientIds = Array.from(new Set(c.seats.map((s: any) => s.assignedClientId).filter(Boolean)));
+              const assignedNames = clientIds
+                .map((id: any) => clients.find((cl: any) => cl.id === id)?.companyName)
+                .filter(Boolean);
+              const isOpen = cabinDetailsId === c.id;
+              return (
+                <div key={c.id} className="card">
+                  <div className="flex items-start justify-between">
+                    <div className="font-medium">{c.name} <span className="text-xs text-gray-500">cap {c.capacity} · {c.seats.length} seats</span></div>
+                    <button type="button" className="btn-ghost text-xs" onClick={() => setCabinDetailsId(isOpen ? null : c.id)}>
+                      {isOpen ? "Hide" : "Details"}
+                    </button>
+                  </div>
+                  {photos.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">{photos.map((p, i) => <img key={i} src={p} className="w-16 h-16 object-cover rounded border cursor-pointer" alt="" onClick={() => setPreview(p)} />)}</div>
+                  )}
+                  {isOpen && (
+                    <div className="mt-3 pt-3 border-t text-sm space-y-1">
+                      <div><span className="muted">Capacity:</span> {c.capacity} seats</div>
+                      <div><span className="muted">Seats created:</span> {c.seats.length}</div>
+                      <div><span className="muted">Floor:</span> {floorName || "—"}</div>
+                      <div><span className="muted">Occupied:</span> {occSeats} · <span className="muted">Unused (½ price):</span> {unusedSeats} · <span className="muted">Free:</span> {freeSeats}</div>
+                      <div><span className="muted">Assigned client{assignedNames.length > 1 ? "s" : ""}:</span> {assignedNames.length ? assignedNames.join(", ") : "—"}</div>
+                      <div><span className="muted">Notes:</span> {c.notes || "—"}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {cabins.length === 0 && <p className="muted">No cabins yet</p>}
           </div>
         </div>
