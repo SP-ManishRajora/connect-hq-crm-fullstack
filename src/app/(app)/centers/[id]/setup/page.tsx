@@ -16,7 +16,13 @@ export default async function Page({ params }: { params: { id: string } }) {
     prisma.cabin.findMany({ where: { centerId: params.id }, include: { seats: true }, orderBy: { name: "asc" } }),
     prisma.seat.findMany({ where: { centerId: params.id, cabinId: null }, orderBy: { number: "asc" } }),
     prisma.inventoryItem.findMany({ where: { centerId: params.id }, orderBy: { name: "asc" } }),
-    prisma.client.findMany({ where: { active: true, centerId: params.id }, select: { id: true, companyName: true, centerId: true, cabinId: true } }),
+    // Assignable clients: those already in THIS center, plus any not yet tied to a center.
+    // (Clients belonging to a different center are excluded so we don't poach them by mistake.)
+    prisma.client.findMany({
+      where: { active: true, OR: [{ centerId: params.id }, { centerId: null }] },
+      select: { id: true, companyName: true, centerId: true, cabinId: true },
+      orderBy: { companyName: "asc" },
+    }),
     prisma.floor.findMany({ where: { centerId: params.id }, orderBy: { level: "asc" } }),
   ]);
   if (!center) return notFound();
