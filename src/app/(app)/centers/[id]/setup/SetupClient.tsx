@@ -50,7 +50,6 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
 
   async function addFloor() {
     if (!newFloor.name.trim()) { alert("Enter a floor name."); return; }
-    if (newFloor.plans.length < 1) { alert("Upload at least one floor plan image."); return; }
     setSavingFloor(true);
     const r = await fetch(`/api/centers/${center.id}/floors`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -139,7 +138,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
           {/* Floors — each floor requires at least one floor plan image */}
           <div className="border-t pt-4">
             <label className="label">Floors</label>
-            <p className="muted text-xs mb-2">Add each floor of this center. Every floor must have at least one floor-plan image.</p>
+            <p className="muted text-xs mb-2">Add each floor of this center. A floor-plan image is optional — you can add it later.</p>
 
             {/* Existing floors */}
             <div className="space-y-3">
@@ -155,7 +154,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
                       {plans.map((p, i) => (
                         <PlanThumb key={i} src={p} size="w-24 h-24" onClick={() => setPreview(p)} alt={`${f.name} plan ${i + 1}`} />
                       ))}
-                      {plans.length === 0 && <span className="text-xs text-rose-500">No plan</span>}
+                      {plans.length === 0 && <span className="text-xs muted">No plan uploaded</span>}
                     </div>
                   </div>
                 );
@@ -173,7 +172,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
                 onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
               />
               <div>
-                <label className="label text-xs">Floor plan(s) — image or PDF <span className="text-rose-500">*</span></label>
+                <label className="label text-xs">Floor plan(s) — image or PDF <span className="muted">(optional)</span></label>
                 <input type="file" accept="image/*,application/pdf" multiple onChange={async (e) => {
                   const files = Array.from(e.target.files || []);
                   if (!files.length) return;

@@ -11,7 +11,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
   return NextResponse.json(floors);
 }
 
-// POST /api/centers/[id]/floors — add a floor. Requires a name and AT LEAST ONE plan image.
+// POST /api/centers/[id]/floors — add a floor. Requires a name; plan image(s) are optional.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const u = await getSessionUser();
   if (!canManageCenter(u, params.id)) return NextResponse.json({ error: "Not your center" }, { status: 403 });
@@ -20,7 +20,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const name = String(b?.name || "").trim();
   const planImages: string[] = Array.isArray(b?.planImages) ? b.planImages.filter(Boolean) : [];
   if (!name) return NextResponse.json({ error: "Floor name is required." }, { status: 400 });
-  if (planImages.length < 1) return NextResponse.json({ error: "At least one floor plan image is required." }, { status: 400 });
 
   // Level: use provided value, else append after the highest existing level for this center.
   let level = Number.isInteger(b?.level) ? Number(b.level) : NaN;
