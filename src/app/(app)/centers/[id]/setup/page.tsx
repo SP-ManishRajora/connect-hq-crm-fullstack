@@ -16,10 +16,10 @@ export default async function Page({ params }: { params: { id: string } }) {
     prisma.cabin.findMany({ where: { centerId: params.id }, include: { seats: true }, orderBy: { name: "asc" } }),
     prisma.seat.findMany({ where: { centerId: params.id, cabinId: null }, orderBy: { number: "asc" } }),
     prisma.inventoryItem.findMany({ where: { centerId: params.id }, orderBy: { name: "asc" } }),
-    // Assignable clients: those already in THIS center, plus any not yet tied to a center.
-    // (Clients belonging to a different center are excluded so we don't poach them by mistake.)
+    // Every client belongs to a center (centerId is required), so there are no "unassigned"
+    // clients. List all active clients; assigning one to a cabin here moves them to this center.
     prisma.client.findMany({
-      where: { active: true, OR: [{ centerId: params.id }, { centerId: null }] },
+      where: { active: true },
       select: { id: true, companyName: true, centerId: true, cabinId: true },
       orderBy: { companyName: "asc" },
     }),
