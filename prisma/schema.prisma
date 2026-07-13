@@ -97,6 +97,8 @@ model Cabin {
   id          String   @id @default(cuid())
   centerId    String
   center      Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  floorId     String?
+  floor       Floor?   @relation(fields: [floorId], references: [id])
   name        String   // e.g., "Cabin A1"
   capacity    Int      // seats inside the cabin
   photos      String?  @db.Text // JSON array of file paths
@@ -705,6 +707,7 @@ model Floor {
 
   zones     Zone[]
   spaces    Space[]
+  cabins    Cabin[]
 
   @@unique([centerId, level])
   @@index([centerId])

@@ -23,6 +23,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const center = await prisma.center.findUnique({ where: { id: params.id }, include: { seats: true } });
   if (!center) return NextResponse.json({ error: "Center not found" }, { status: 404 });
 
+  // Optional floor: if provided, it must belong to this center.
+  const floorId = b.floorId ? String(b.floorId) : null;
+  if (floorId) {
+    const floor = await prisma.floor.findUnique({ where: { id: floorId }, select: { centerId: true } });
+    if (!floor || floor.centerId !== params.id) {
+      return NextResponse.json({ error: "Floor does not belong to this center" }, { status: 400 });
+    }
+  }
+
   const existingSeats = center.seats.length;
   const newSeats = capacity * qty;
   if (existingSeats + newSeats > center.totalSeats) {
@@ -36,7 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const created: any[] = [];
   for (let i = 1; i <= qty; i++) {
     const cabin = await prisma.cabin.create({
-      data: { centerId: params.id, name: `${name} ${i}`, capacity, photos: photosJson },
+      data: { centerId: params.id, floorId, name: `${name} ${i}`, capacity, photos: photosJson },
     });
     for (let j = 1; j <= capacity; j++) {
       await prisma.seat.create({

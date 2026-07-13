@@ -68,11 +68,11 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
   }
 
   // === Cabin add ===
-  const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 1, photos: [] as string[] });
+  const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 1, floorId: "", photos: [] as string[] });
   async function addCabin(e: React.FormEvent) {
     e.preventDefault();
     const r = await fetch(`/api/centers/${center.id}/cabins`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newCab) });
-    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 1, photos: [] }); router.refresh(); }
+    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 1, floorId: "", photos: [] }); router.refresh(); }
     else { const j = await r.json(); alert(j.error || "Failed"); }
   }
 
@@ -165,12 +165,15 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
             {/* Add a floor */}
             <div className="border border-dashed rounded-md p-3 mt-3 space-y-2">
               <p className="text-xs font-medium text-gray-600">Add a floor</p>
-              <input
-                className="input"
-                placeholder="Floor name (e.g. Ground, 1st Floor)"
-                value={newFloor.name}
-                onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
-              />
+              <div>
+                <label className="label text-xs">Floor name <span className="text-rose-500">*</span></label>
+                <input
+                  className="input"
+                  placeholder="Floor name (e.g. Ground, 1st Floor)"
+                  value={newFloor.name}
+                  onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
+                />
+              </div>
               <div>
                 <label className="label text-xs">Floor plan(s) — image or PDF <span className="muted">(optional)</span></label>
                 <input type="file" accept="image/*,application/pdf" multiple onChange={async (e) => {
@@ -191,7 +194,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
               <button
                 type="button"
                 className="btn-primary text-sm disabled:opacity-50"
-                disabled={savingFloor || !newFloor.name.trim() || newFloor.plans.length < 1}
+                disabled={savingFloor || !newFloor.name.trim()}
                 onClick={addFloor}
               >
                 {savingFloor ? "Adding…" : "Add Floor"}
@@ -221,11 +224,17 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
 
       {tab === "CABINS" && (
         <div className="space-y-4">
-          <form onSubmit={addCabin} className="card grid sm:grid-cols-5 gap-3">
-            <h2 className="h2 sm:col-span-5">Add cabin(s)</h2>
+          <form onSubmit={addCabin} className="card grid sm:grid-cols-6 gap-3">
+            <h2 className="h2 sm:col-span-6">Add cabin(s)</h2>
             <div><label className="label">Name</label><input className="input" value={newCab.name} onChange={(e) => setNewCab({ ...newCab, name: e.target.value })} placeholder="e.g. 6-Seater Cabin" /></div>
             <div><label className="label">Capacity</label><input className="input" type="number" value={newCab.capacity} onChange={(e) => setNewCab({ ...newCab, capacity: Number(e.target.value) })} /></div>
             <div><label className="label">Qty</label><input className="input" type="number" value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
+            <div><label className="label">Floor <span className="muted">(optional)</span></label>
+              <select className="input" title="Floor" value={newCab.floorId} onChange={(e) => setNewCab({ ...newCab, floorId: e.target.value })}>
+                <option value="">— None —</option>
+                {floors.map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
             <div className="sm:col-span-2"><label className="label">Photos</label>
               <input type="file" accept="image/*" multiple onChange={async (e) => {
                 const files = Array.from(e.target.files || []);
@@ -234,8 +243,8 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
               }} />
               <div className="flex flex-wrap gap-1 mt-1">{newCab.photos.map((p: string, i: number) => <img key={i} src={p} className="w-12 h-12 object-cover rounded border" alt="" />)}</div>
             </div>
-            <div className="sm:col-span-5 flex justify-end"><button className="btn-primary">Add</button></div>
-            <p className="muted text-xs sm:col-span-5">Tip: create groups, e.g. <code>Cabin</code> × cap 6 × qty 3 = 3 cabins × 6 seats. Seats are auto-created (S-numbered).</p>
+            <div className="sm:col-span-6 flex justify-end"><button className="btn-primary">Add</button></div>
+            <p className="muted text-xs sm:col-span-6">Tip: create groups, e.g. <code>Cabin</code> × cap 6 × qty 3 = 3 cabins × 6 seats. Seats are auto-created (S-numbered).</p>
           </form>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

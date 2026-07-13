@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `Cabin` ADD COLUMN `floorId` VARCHAR(191) NULL;
+
+-- AddForeignKey
+ALTER TABLE `Cabin` ADD CONSTRAINT `Cabin_floorId_fkey` FOREIGN KEY (`floorId`) REFERENCES `Floor`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
