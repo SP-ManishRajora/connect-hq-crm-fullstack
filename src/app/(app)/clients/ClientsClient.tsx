@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtDate, fmtINR } from "@/lib/utils";
 
-export default function ClientsClient({ initial, acceptedProposals }: any) {
+export default function ClientsClient({ initial, acceptedProposals, centers = [], cabins = [] }: any) {
   const router = useRouter();
   const [showOnboard, setShowOnboard] = useState(false);
   const [proposalId, setProposalId] = useState("");
@@ -16,6 +16,16 @@ export default function ClientsClient({ initial, acceptedProposals }: any) {
   const [special, setSpecial] = useState("");
   const [incrementPct, setIncrementPct] = useState(5);
   const [occupiedSeats, setOccupiedSeats] = useState<number | "">("");
+
+  // Direct onboarding (no lead/proposal): manual center/cabin + commercial terms.
+  const [showDirect, setShowDirect] = useState(false);
+  const [d, setD] = useState<any>({
+    companyName: "", contactName: "", email: "", phone: "",
+    centerId: "", cabinId: "", startDate: "",
+    monthlyRent: "", securityDeposit: "", incrementPct: 5,
+    occupiedSeats: "", special: "",
+  });
+  const cabinsForCenter = cabins.filter((c: any) => c.centerId === d.centerId);
 
   async function onboard(e: React.FormEvent) {
     e.preventDefault();
@@ -34,6 +44,29 @@ export default function ClientsClient({ initial, acceptedProposals }: any) {
     }
   }
 
+  async function onboardDirect(e: React.FormEvent) {
+    e.preventDefault();
+    const r = await fetch("/api/clients/direct", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        companyName: d.companyName, contactName: d.contactName, email: d.email, phone: d.phone,
+        centerId: d.centerId, cabinId: d.cabinId || null, startDate: d.startDate || undefined,
+        monthlyRent: d.monthlyRent, securityDeposit: d.securityDeposit, incrementPct: d.incrementPct,
+        occupiedSeats: d.occupiedSeats === "" ? undefined : Number(d.occupiedSeats),
+        specialAgreement: d.special,
+      }),
+    });
+    if (r.ok) {
+      const c = await r.json();
+      setShowDirect(false);
+      router.push(`/clients/${c.id}`);
+    } else {
+      const j = await r.json();
+      alert(j.error || "Failed");
+    }
+  }
+
   async function sendOps(id: string) { await fetch(`/api/clients/${id}/send-ops`, { method: "POST" }); router.refresh(); }
   async function confirmCM(id: string) { await fetch(`/api/clients/${id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ side: "CM" }) }); router.refresh(); }
   async function confirmClient(id: string) { await fetch(`/api/clients/${id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ side: "CLIENT" }) }); router.refresh(); }
@@ -42,12 +75,52 @@ export default function ClientsClient({ initial, acceptedProposals }: any) {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="h1">Clients & Onboarding</h1>
-        <button className="btn-primary" onClick={() => setShowOnboard(!showOnboard)}>+ Onboard New Client</button>
+        <div className="flex gap-2">
+          <button type="button" className="btn-ghost" onClick={() => { setShowDirect(!showDirect); setShowOnboard(false); }}>+ New Client (direct)</button>
+          <button type="button" className="btn-primary" onClick={() => { setShowOnboard(!showOnboard); setShowDirect(false); }}>+ Onboard from Proposal</button>
+        </div>
       </div>
+
+      {showDirect && (
+        <form onSubmit={onboardDirect} className="card space-y-3">
+          <h2 className="h2">New client — direct onboarding (no lead/proposal)</h2>
+          <p className="muted text-sm">Enter the client and commercial terms manually. A contract is created automatically.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div><label className="label">Company *</label><input className="input" required value={d.companyName} onChange={(e) => setD({ ...d, companyName: e.target.value })} /></div>
+            <div><label className="label">Primary Contact *</label><input className="input" required value={d.contactName} onChange={(e) => setD({ ...d, contactName: e.target.value })} /></div>
+            <div><label className="label">Email *</label><input className="input" required type="email" value={d.email} onChange={(e) => setD({ ...d, email: e.target.value })} /></div>
+            <div><label className="label">Phone</label><input className="input" value={d.phone} onChange={(e) => setD({ ...d, phone: e.target.value })} /></div>
+            <div><label className="label">Center *</label>
+              <select className="input" required title="Center" value={d.centerId} onChange={(e) => setD({ ...d, centerId: e.target.value, cabinId: "" })}>
+                <option value="">— Select —</option>
+                {centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Cabin (optional)</label>
+              <select className="input" title="Cabin" value={d.cabinId} onChange={(e) => setD({ ...d, cabinId: e.target.value })} disabled={!d.centerId}>
+                <option value="">— Open / none —</option>
+                {cabinsForCenter.map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.capacity} seats)</option>)}
+              </select>
+            </div>
+            <div><label className="label">Start date</label><input className="input" type="date" title="Start date" value={d.startDate} onChange={(e) => setD({ ...d, startDate: e.target.value })} /></div>
+            <div><label className="label">Monthly rent (₹) *</label><input className="input" required type="number" min="0" value={d.monthlyRent} onChange={(e) => setD({ ...d, monthlyRent: e.target.value })} /></div>
+            <div><label className="label">Security deposit (₹)</label><input className="input" type="number" min="0" value={d.securityDeposit} onChange={(e) => setD({ ...d, securityDeposit: e.target.value })} /></div>
+            <div><label className="label">Annual increment %</label><input className="input" type="number" step="0.1" value={d.incrementPct} onChange={(e) => setD({ ...d, incrementPct: Number(e.target.value) })} /></div>
+            <div><label className="label">Occupied seats</label><input className="input" type="number" min="0" value={d.occupiedSeats} onChange={(e) => setD({ ...d, occupiedSeats: e.target.value })} placeholder="defaults to cabin capacity" /></div>
+            <div className="sm:col-span-2"><label className="label">Special agreement / requirements</label>
+              <textarea className="input" rows={3} value={d.special} onChange={(e) => setD({ ...d, special: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setShowDirect(false)}>Cancel</button>
+            <button type="submit" className="btn-primary">Create Client + Contract</button>
+          </div>
+        </form>
+      )}
 
       {showOnboard && (
         <form onSubmit={onboard} className="card space-y-3">
-          <h2 className="h2">Onboard from accepted proposal</h2>
+          <h2 className="h2">Onboard from accepted proposal (lead-based)</h2>
           {acceptedProposals.length === 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2 text-sm">
               No accepted proposals available. To onboard a client, first create a{" "}
