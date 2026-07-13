@@ -89,12 +89,49 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
   }
 
   // === Cabin add ===
-  const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 1, floorId: "", notes: "", photos: [] as string[] });
+  const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 6, floorId: "", notes: "", photos: [] as string[] });
   const [cabinDetailsId, setCabinDetailsId] = useState<string | null>(null); // which cabin's details are expanded
+
+  // === Cabin edit ===
+  const [editCab, setEditCab] = useState<any>(null); // { id, name, capacity, floorId, notes, photos[] } or null
+  const [savingCab, setSavingCab] = useState(false);
+
+  function startEditCabin(c: any) {
+    setCabinDetailsId(null);
+    setEditCab({
+      id: c.id,
+      name: c.name || "",
+      capacity: c.seats.length,
+      floorId: c.floorId || "",
+      notes: c.notes || "",
+      photos: c.photos ? JSON.parse(c.photos) : [],
+    });
+  }
+
+  async function saveEditCabin() {
+    if (!editCab) return;
+    if (!editCab.name.trim()) { alert("Cabin name cannot be empty."); return; }
+    setSavingCab(true);
+    const r = await fetch(`/api/centers/${center.id}/cabins`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cabinId: editCab.id, name: editCab.name.trim(), capacity: Number(editCab.capacity),
+        floorId: editCab.floorId || null, notes: editCab.notes, photos: editCab.photos,
+      }),
+    });
+    setSavingCab(false);
+    if (r.ok) { setEditCab(null); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to update cabin"); }
+  }
   async function addCabin(e: React.FormEvent) {
     e.preventDefault();
-    const r = await fetch(`/api/centers/${center.id}/cabins`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newCab) });
-    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 1, floorId: "", notes: "", photos: [] }); router.refresh(); }
+    // Qty = seats in this cabin → create ONE cabin whose capacity is that seat count.
+    const seats = Number(newCab.qty);
+    const r = await fetch(`/api/centers/${center.id}/cabins`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newCab.name, capacity: seats, qty: 1, floorId: newCab.floorId, photos: newCab.photos }),
+    });
+    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 6, floorId: "", notes: "", photos: [] }); router.refresh(); }
     else { const j = await r.json(); alert(j.error || "Failed"); }
   }
 
@@ -290,10 +327,9 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
       {tab === "CABINS" && (
         <div className="space-y-4">
           <form onSubmit={addCabin} className="card grid sm:grid-cols-6 gap-3">
-            <h2 className="h2 sm:col-span-6">Add cabin(s)</h2>
-            <div><label className="label">Name</label><input className="input" value={newCab.name} onChange={(e) => setNewCab({ ...newCab, name: e.target.value })} placeholder="e.g. 6-Seater Cabin" /></div>
-            <div><label className="label">Capacity</label><input className="input" type="number" value={newCab.capacity} onChange={(e) => setNewCab({ ...newCab, capacity: Number(e.target.value) })} /></div>
-            <div><label className="label">Qty</label><input className="input" type="number" min="0" value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
+            <h2 className="h2 sm:col-span-6">Add cabin</h2>
+            <div className="sm:col-span-2"><label className="label">Name</label><input className="input" value={newCab.name} onChange={(e) => setNewCab({ ...newCab, name: e.target.value })} placeholder="e.g. 6-Seater Cabin" /></div>
+            <div><label className="label">Qty (seats)</label><input className="input" type="number" min="1" value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
             <div><label className="label">Floor <span className="muted">(optional)</span></label>
               <select className="input" title="Floor" value={newCab.floorId} onChange={(e) => setNewCab({ ...newCab, floorId: e.target.value })}>
                 <option value="">— None —</option>
@@ -308,20 +344,12 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
               }} />
               <div className="flex flex-wrap gap-1 mt-1">{newCab.photos.map((p: string, i: number) => <img key={i} src={p} className="w-12 h-12 object-cover rounded border" alt="" />)}</div>
             </div>
-            {/* Zero-quantity: capture a note explaining the placeholder cabin. */}
-            {Number(newCab.qty) === 0 && (
-              <div className="sm:col-span-6">
-                <label className="label">Note <span className="text-rose-500">*</span></label>
-                <textarea className="input" rows={2} title="Note" placeholder="Why is this a zero-quantity cabin? (e.g. planned / reserved space, not yet built)"
-                  value={newCab.notes} onChange={(e) => setNewCab({ ...newCab, notes: e.target.value })} />
-              </div>
-            )}
-            <div className="sm:col-span-6 flex justify-end">
-              <button className="btn-primary" disabled={Number(newCab.qty) === 0 && !newCab.notes.trim()}>Add</button>
+            <div className="sm:col-span-6 flex items-center justify-between gap-3">
+              <p className="muted text-xs">
+                <strong>Qty</strong> = seats in this cabin. Creating it uses <strong>{Number(newCab.qty) || 0}</strong> of the center&apos;s <strong>{remainingSeats}</strong> unallocated seats → <strong>{remainingSeats - (Number(newCab.qty) || 0)}</strong> left.
+              </p>
+              <button className="btn-primary" disabled={Number(newCab.qty) < 1 || Number(newCab.qty) > remainingSeats}>Add</button>
             </div>
-            <p className="muted text-xs sm:col-span-6">
-              <strong>Qty</strong> = how many identical cabins to create at once. E.g. <code>Cabin</code> × cap 6 × qty 3 = 3 cabins × 6 seats each (seats auto-created, S-numbered). Set <strong>Qty = 0</strong> to record a placeholder cabin with a note (no seats created).
-            </p>
           </form>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -337,13 +365,65 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
                 .map((id: any) => clients.find((cl: any) => cl.id === id)?.companyName)
                 .filter(Boolean);
               const isOpen = cabinDetailsId === c.id;
+              const isEditing = editCab?.id === c.id;
+              if (isEditing) {
+                return (
+                  <div key={c.id} className="card space-y-2">
+                    <div className="font-medium text-sm">Edit cabin</div>
+                    <div><label className="label text-xs">Name <span className="text-rose-500">*</span></label>
+                      <input className="input" title="Cabin name" value={editCab.name} onChange={(e) => setEditCab({ ...editCab, name: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="label text-xs">Capacity (seats)</label>
+                        <input className="input" type="number" min="1" title="Capacity" value={editCab.capacity} onChange={(e) => setEditCab({ ...editCab, capacity: Number(e.target.value) })} />
+                      </div>
+                      <div><label className="label text-xs">Floor</label>
+                        <select className="input" title="Floor" value={editCab.floorId} onChange={(e) => setEditCab({ ...editCab, floorId: e.target.value })}>
+                          <option value="">— None —</option>
+                          {floors.map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div><label className="label text-xs">Notes</label>
+                      <textarea className="input" rows={2} title="Notes" value={editCab.notes} onChange={(e) => setEditCab({ ...editCab, notes: e.target.value })} />
+                    </div>
+                    <div><label className="label text-xs">Photos</label>
+                      <input type="file" accept="image/*" multiple onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (!files.length) return;
+                        const ps = await Promise.all(files.map((f) => uploadFile(f, "cabins")));
+                        setEditCab((cur: any) => ({ ...cur, photos: [...cur.photos, ...ps] }));
+                      }} />
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {editCab.photos.map((p: string, i: number) => (
+                          <div key={i} className="relative">
+                            <img src={p} className="w-16 h-16 object-cover rounded border cursor-pointer" alt="" onClick={() => setPreview(p)} />
+                            <button type="button" className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs"
+                              onClick={() => setEditCab((cur: any) => ({ ...cur, photos: cur.photos.filter((_: string, k: number) => k !== i) }))}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="muted text-xs">Changing capacity adds/removes auto-created seats. Occupied seats are never removed.</p>
+                    <div className="flex gap-2">
+                      <button type="button" className="btn-primary text-sm disabled:opacity-50" disabled={savingCab || !editCab.name.trim()} onClick={saveEditCabin}>
+                        {savingCab ? "Saving…" : "Save"}
+                      </button>
+                      <button type="button" className="btn-ghost text-sm" onClick={() => setEditCab(null)}>Cancel</button>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div key={c.id} className="card">
                   <div className="flex items-start justify-between">
                     <div className="font-medium">{c.name} <span className="text-xs text-gray-500">cap {c.capacity} · {c.seats.length} seats</span></div>
-                    <button type="button" className="btn-ghost text-xs" onClick={() => setCabinDetailsId(isOpen ? null : c.id)}>
-                      {isOpen ? "Hide" : "Details"}
-                    </button>
+                    <div className="flex gap-2">
+                      <button type="button" className="btn-ghost text-xs" onClick={() => startEditCabin(c)}>Edit</button>
+                      <button type="button" className="btn-ghost text-xs" onClick={() => setCabinDetailsId(isOpen ? null : c.id)}>
+                        {isOpen ? "Hide" : "Details"}
+                      </button>
+                    </div>
                   </div>
                   {photos.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">{photos.map((p, i) => <img key={i} src={p} className="w-16 h-16 object-cover rounded border cursor-pointer" alt="" onClick={() => setPreview(p)} />)}</div>
