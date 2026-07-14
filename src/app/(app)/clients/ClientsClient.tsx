@@ -6,6 +6,36 @@ import { fmtDate, fmtINR } from "@/lib/utils";
 
 export default function ClientsClient({ initial, acceptedProposals, centers = [], cabins = [] }: any) {
   const router = useRouter();
+
+  // Bulk import (Excel) state.
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkCenterId, setBulkCenterId] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkPreview, setBulkPreview] = useState<any>(null);
+  const [bulkResult, setBulkResult] = useState<any>(null);
+
+  async function runBulk(dryRun: boolean) {
+    if (!bulkFile) { alert("Choose a file"); return; }
+    if (!bulkCenterId) { alert("Select a center"); return; }
+    setBulkBusy(true);
+    const fd = new FormData();
+    fd.append("file", bulkFile);
+    fd.append("centerId", bulkCenterId);
+    if (dryRun) fd.append("dryRun", "1");
+    const r = await fetch("/api/clients/bulk-import", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    setBulkBusy(false);
+    if (!r.ok) { alert(j.error || "Import failed"); return; }
+    if (dryRun) { setBulkPreview(j); setBulkResult(null); }
+    else { setBulkResult(j); setBulkPreview(null); router.refresh(); }
+  }
+
+  function resetBulk() {
+    setShowBulk(false); setBulkFile(null); setBulkCenterId("");
+    setBulkPreview(null); setBulkResult(null);
+  }
+
   const [showOnboard, setShowOnboard] = useState(false);
   const [proposalId, setProposalId] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -76,10 +106,63 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="h1">Clients & Onboarding</h1>
         <div className="flex gap-2">
+          <button type="button" className="btn-ghost" onClick={() => { setShowBulk(true); setShowDirect(false); setShowOnboard(false); }}>⬆ Bulk upload</button>
           <button type="button" className="btn-ghost" onClick={() => { setShowDirect(!showDirect); setShowOnboard(false); }}>+ New Client (direct)</button>
           <button type="button" className="btn-primary" onClick={() => { setShowOnboard(!showOnboard); setShowDirect(false); }}>+ Onboard from Proposal</button>
         </div>
       </div>
+
+      {showBulk && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="h2">Bulk upload clients (Excel)</h2>
+            <button type="button" className="btn-ghost text-sm" onClick={resetBulk}>Close</button>
+          </div>
+          <p className="muted text-sm">
+            Upload the <code>ConnecthqCollectionAndCashExpense.xlsx</code> format. All sheets are scanned; rows with a valid email + company become clients. Choose the center these clients belong to.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div><label className="label">Center *</label>
+              <select className="input" value={bulkCenterId} onChange={(e) => setBulkCenterId(e.target.value)} title="Center">
+                <option value="">— Select —</option>
+                {centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Excel file (.xlsx) *</label>
+              <input className="input" type="file" accept=".xlsx,.xls" title="Excel file"
+                onChange={(e) => { setBulkFile(e.target.files?.[0] || null); setBulkPreview(null); setBulkResult(null); }} />
+            </div>
+          </div>
+
+          {bulkPreview && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 text-blue-900 px-3 py-2 text-sm space-y-1">
+              <div><strong>Preview:</strong> {bulkPreview.willCreate} will be created · {bulkPreview.alreadyExists} already exist · {bulkPreview.totalParsed} rows parsed.</div>
+              {bulkPreview.sample?.length > 0 && (
+                <div className="text-xs">Sample: {bulkPreview.sample.map((s: any) => `${s.company} (${s.seats}×₹${s.rate})`).join(", ")}</div>
+              )}
+              {bulkPreview.skippedSheets?.length > 0 && (
+                <div className="text-xs text-blue-700">Skipped sheets: {bulkPreview.skippedSheets.map((s: any) => s.sheet).join(", ")}</div>
+              )}
+            </div>
+          )}
+
+          {bulkResult && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 text-emerald-900 px-3 py-2 text-sm space-y-1">
+              <div><strong>Imported {bulkResult.created} client(s).</strong> {bulkResult.alreadyExists} already existed (skipped).</div>
+              {bulkResult.errors?.length > 0 && <div className="text-xs text-rose-700">{bulkResult.errors.length} failed: {bulkResult.errors.slice(0, 3).map((e: any) => e.email).join(", ")}…</div>}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost disabled:opacity-50" disabled={bulkBusy || !bulkFile || !bulkCenterId} onClick={() => runBulk(true)}>
+              {bulkBusy ? "…" : "Preview"}
+            </button>
+            <button type="button" className="btn-primary disabled:opacity-50" disabled={bulkBusy || !bulkFile || !bulkCenterId} onClick={() => runBulk(false)}>
+              {bulkBusy ? "Importing…" : "Import"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showDirect && (
         <form onSubmit={onboardDirect} className="card space-y-3">
