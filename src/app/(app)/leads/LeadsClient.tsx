@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { allowedNextStatuses } from "@/lib/leadStatus";
 import PartnerPicker from "@/components/PartnerPicker";
 import { isValidIndianPhone, isValidEmail } from "@/lib/validators";
+import { fmtDate } from "@/lib/utils";
 
 const SOURCE = ["WEB_FORM", "CALL", "WHATSAPP", "WALK_IN", "REFERRAL"];
 
@@ -308,7 +309,7 @@ export default function LeadsClient({ initialLeads, centers, partners = [] }: an
                       </div>
                     )}
                   </td>
-                  <td className="text-xs whitespace-nowrap">{l.createdAt ? new Date(l.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+                  <td className="text-xs whitespace-nowrap">{fmtDate(l.createdAt)}</td>
                   <td><Link href={`/leads/${l.id}`} className="text-brand-600 text-sm">Open →</Link></td>
                 </tr>
               ))}

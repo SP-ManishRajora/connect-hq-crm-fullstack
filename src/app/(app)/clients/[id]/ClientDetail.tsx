@@ -4,18 +4,52 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtDate, fmtINR } from "@/lib/utils";
 
-export default function ClientDetail({ client }: any) {
+export default function ClientDetail({ client, pendingInvites = [] }: any) {
   const router = useRouter();
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [emp, setEmp] = useState<any>({ name: "", email: "", phone: "", aadhaar: "", pan: "", designation: "", password: "" });
   const [occ, setOcc] = useState<number>(client.occupiedSeats || 0);
   const [picUserId, setPicUserId] = useState<string>(client.picUserId || "");
 
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [showInvite, setShowInvite] = useState(false);
+
   async function addEmp(e: React.FormEvent) {
     e.preventDefault();
     const r = await fetch(`/api/clients/${client.id}/employees`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(emp) });
     if (r.ok) { setShowAddEmp(false); setEmp({ name: "", email: "", phone: "", aadhaar: "", pan: "", designation: "", password: "" }); router.refresh(); }
     else { const j = await r.json(); alert(j.error || "Failed"); }
+  }
+
+  async function sendInvite(e: React.FormEvent) {
+    e.preventDefault();
+    const r = await fetch(`/api/clients/${client.id}/invites`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: inviteEmail }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      setInviteEmail(""); setShowInvite(false);
+      alert(j.link ? `Invite sent. If email is not configured, share this link:\n${j.link}` : "Invite sent.");
+      router.refresh();
+    } else {
+      alert(j.error || "Failed to send invite");
+    }
+  }
+
+  async function resendInvite(inviteId: string) {
+    const r = await fetch(`/api/clients/${client.id}/invites/${inviteId}/resend`, { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      alert(j.link ? `Invite resent. If email is not configured, share this link:\n${j.link}` : "Invite resent.");
+      router.refresh();
+    } else {
+      alert(j.error || "Failed to resend invite");
+    }
+  }
+
+  async function revokeInvite(inviteId: string) {
+    if (!confirm("Revoke this pending invite? The link will stop working.")) return;
+    const r = await fetch(`/api/clients/${client.id}/invites/${inviteId}`, { method: "DELETE" });
+    if (r.ok) router.refresh();
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to revoke"); }
   }
 
   async function uploadContract(e: React.ChangeEvent<HTMLInputElement>) {
@@ -115,9 +149,44 @@ export default function ClientDetail({ client }: any) {
       <div id="add-emp-section" className="card">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h2 className="h2">Employee Directory ({client.employees.length})</h2>
-          <button className="btn-primary" onClick={() => setShowAddEmp(!showAddEmp)}>+ Add Employee</button>
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={() => setShowInvite(!showInvite)}>✉ Invite via email</button>
+            <button className="btn-primary" onClick={() => setShowAddEmp(!showAddEmp)}>+ Add Employee</button>
+          </div>
         </div>
-        <p className="muted text-xs">Each employee gets a portal login (used for internet, meeting rooms, complaints).</p>
+        <p className="muted text-xs">Each employee gets a portal login (used for internet, meeting rooms, complaints). Invites are capped by the client's occupied seats.</p>
+
+        {showInvite && (
+          <form onSubmit={sendInvite} className="flex gap-2 items-end mt-3 border rounded p-3 flex-wrap">
+            <div className="flex-1 min-w-[220px]"><label className="label">Email to invite</label><input className="input" type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="person@company.com" /></div>
+            <button className="btn-primary">Send invite</button>
+            <button type="button" className="btn-ghost" onClick={() => setShowInvite(false)}>Cancel</button>
+          </form>
+        )}
+
+        {pendingInvites.length > 0 && (
+          <div className="mt-3 border rounded p-3">
+            <div className="text-sm font-medium mb-2">Pending invites ({pendingInvites.length})</div>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead><tr><th>Email</th><th>Sent</th><th>Expires</th><th></th></tr></thead>
+                <tbody>
+                  {pendingInvites.map((inv: any) => (
+                    <tr key={inv.id}>
+                      <td>{inv.email}</td>
+                      <td className="text-xs">{fmtDate(inv.createdAt)}</td>
+                      <td className="text-xs">{fmtDate(inv.expiresAt)}</td>
+                      <td className="whitespace-nowrap">
+                        <button className="text-xs text-brand-600 mr-3" onClick={() => resendInvite(inv.id)}>Resend</button>
+                        <button className="text-xs text-red-600" onClick={() => revokeInvite(inv.id)}>Revoke</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {showAddEmp && (
           <form onSubmit={addEmp} className="grid sm:grid-cols-2 gap-3 mt-3 border rounded p-3">

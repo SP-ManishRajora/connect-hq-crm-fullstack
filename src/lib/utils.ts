@@ -12,7 +12,10 @@ export function fmtINR(n: number) {
 export function fmtDate(d: Date | string | null | undefined) {
   if (!d) return "—";
   const dt = typeof d === "string" ? new Date(d) : d;
-  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  if (Number.isNaN(dt.getTime())) return "—";
+  // Fixed timeZone so server (UTC) and client (local) render identically — avoids
+  // React hydration mismatches.
+  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 }
 
 // Date + time, with a fixed locale and timezone so server and client render

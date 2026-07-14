@@ -208,7 +208,7 @@ npm run build
 
 **Verify the build worked locally before moving on:**
 ```bash
-nnpm run build
+npm run build
 # Should print: ▶ Local: http://localhost:3000
 # Press Ctrl+C to stop
 ```

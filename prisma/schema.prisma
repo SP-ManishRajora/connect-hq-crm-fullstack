@@ -51,6 +51,8 @@ model User {
   // Occupancy module
   allocationsMade   Allocation[]
   reservationsMade  Reservation[]
+
+  passwordResets    ClientInvite[] @relation("UserResets")
 }
 
 // ============= CENTERS =============
@@ -282,6 +284,7 @@ model Client {
   referralsMade     Referral[] @relation("ReferralMadeBy")
   referralsReceived Referral[] @relation("ReferralFor")
   employees         User[]     @relation("ClientEmployees")
+  invites           ClientInvite[] @relation("ClientInvites")
 
   // Occupancy module
   allocations       Allocation[]
@@ -448,6 +451,7 @@ model MeetingRoom {
   name      String
   capacity  Int
   hourlyRate Float   @default(0)
+  amenities String?  @db.Text // JSON array of amenity strings e.g. ["Projector","Whiteboard","AC"]
   active    Boolean  @default(true)
 
   bookings  Booking[]
@@ -646,6 +650,31 @@ model AuditLog {
   targetId   String?
   meta       String?  @db.Text // JSON string for extra context
   createdAt  DateTime @default(now())
+}
+
+// ============= CLIENT INVITES / PASSWORD RESET =============
+// Single token store for two flows (distinguished by `type`):
+//   INVITE — admin/CM invites a client contact; recipient sets name + password to create a CLIENT user.
+//   RESET  — a client requests a password reset; recipient sets a new password.
+model ClientInvite {
+  id               String    @id @default(cuid())
+  token            String    @unique
+  type             String    @default("INVITE") // INVITE | RESET
+  email            String
+  // INVITE: the employer Client the new user will belong to.
+  employerClientId String?
+  employerClient   Client?   @relation("ClientInvites", fields: [employerClientId], references: [id])
+  // RESET: the existing user whose password is being reset.
+  userId           String?
+  user             User?     @relation("UserResets", fields: [userId], references: [id])
+  invitedById      String?   // staff user who generated an INVITE
+  expiresAt        DateTime
+  usedAt           DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([email])
+  @@index([employerClientId])
+  @@index([expiresAt, usedAt])
 }
 
 // ============= SEAT MAP =============

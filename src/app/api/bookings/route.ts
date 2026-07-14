@@ -23,8 +23,15 @@ export async function POST(req: NextRequest) {
 
   const start = new Date(b.startTime);
   const end = new Date(b.endTime);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return NextResponse.json({ error: "Invalid date/time" }, { status: 400 });
+  }
   const durationHrs = (end.getTime() - start.getTime()) / 3600000;
   if (durationHrs <= 0) return NextResponse.json({ error: "Invalid time range" }, { status: 400 });
+  // Business rule: no bookings for past start times.
+  if (start.getTime() < Date.now()) {
+    return NextResponse.json({ error: "Cannot book a slot in the past" }, { status: 400 });
+  }
 
   // overlap check
   const clash = await prisma.booking.findFirst({

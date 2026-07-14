@@ -6,6 +6,36 @@ changelog see [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
+## Client Portal — Login, Registration & Meeting-Room Booking
+
+**Requirement:** Secure client authentication (register via emailed link with a manageable
+number of logins, log in/out, password reset), a client dashboard (welcome, upcoming bookings,
+history, available rooms, booking status), meeting-room browsing with details + date/time/capacity
+filters, and booking with double-booking prevention, past-date rejection, and cancellation rules.
+
+**Built** (extends existing JWT/bcrypt auth + `MeetingRoom`/`Booking` models — see
+[client-portal-booking.md](./client-portal-booking.md) for the full guide):
+- **`ClientInvite` model** — single token store for `INVITE` (72h) + `RESET` (2h) flows; crypto-random,
+  single-use, time-boxed. `MeetingRoom.amenities` added (JSON-array text).
+- **`src/lib/client-auth.ts`** — invite/reset helpers, `loginCapFor` (cap = `max(1, occupiedSeats)`,
+  counts active client users + pending invites), `passwordError` (≥8 chars, letters+numbers).
+- **Auth routes:** `POST /api/clients/[id]/invites` (staff, cap-enforced, emails + returns link),
+  `GET|POST /api/auth/register`, `POST /api/auth/forgot-password` (anti-enumeration),
+  `GET|POST /api/auth/reset-password`. Public pages `/register`, `/forgot-password`, `/reset-password`
+  + middleware allowlist; "Forgot password?" on login.
+- **Booking:** `POST /api/bookings/[id]/cancel` (own-only, 60-min cutoff, staff override); past-date
+  guard added to `POST /api/bookings`; `GET /api/meeting-rooms` with `centerId`/`minCapacity`/`start`+`end`
+  availability annotation; `POST` accepts amenities; login-cap + password policy added to
+  `POST /api/clients/[id]/employees`.
+- **Client dashboard** (`/client-portal`): summary tiles, upcoming bookings + cancel, room browser with
+  date/time/capacity filters + live availability + amenity badges, booking form, history table
+  (existing tickets/feedback/notices/invoices preserved). Amenities input on staff Add-Room;
+  "Invite via email" on client detail.
+- **Verified:** `tsc` clean; automated E2E 22/23 (the miss was a test artifact — unauth API calls get a
+  307 redirect to `/login` from middleware, so still blocked).
+
+---
+
 ## Searchable category combobox (Inventory & Repairs)
 
 **Requirement:** Category fields should be a search box with a dropdown that filters as you

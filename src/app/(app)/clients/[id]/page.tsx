@@ -17,5 +17,18 @@ export default async function Page({ params }: { params: { id: string } }) {
     },
   });
   if (!c) return notFound();
-  return <ClientDetail client={JSON.parse(JSON.stringify(c))} />;
+
+  // Pending (unused, unexpired) portal invites for the resend/revoke panel.
+  const invites = await prisma.clientInvite.findMany({
+    where: { employerClientId: params.id, type: "INVITE", usedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, email: true, createdAt: true, expiresAt: true },
+  });
+
+  return (
+    <ClientDetail
+      client={JSON.parse(JSON.stringify(c))}
+      pendingInvites={JSON.parse(JSON.stringify(invites))}
+    />
+  );
 }

@@ -50,6 +50,7 @@ export default function LoginPage() {
           <button className="btn-primary w-full" disabled={loading}>
             {loading ? "Signing in…" : "Sign in"}
           </button>
+          <a href="/forgot-password" className="block text-center text-xs text-brand-600 hover:underline">Forgot password?</a>
         </form>
         <div className="mt-6 text-xs text-gray-500 text-center">
           Demo: admin@erp.com / admin123 · sales@erp.com / sales123 · ops@erp.com / ops123

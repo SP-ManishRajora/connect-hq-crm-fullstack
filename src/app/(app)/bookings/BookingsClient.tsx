@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { fmtINR } from "@/lib/utils";
+import { fmtINR, fmtDateTime } from "@/lib/utils";
 
-const EMPTY_ROOM = { centerId: "", name: "", capacity: "", hourlyRate: "" };
+const EMPTY_ROOM = { centerId: "", name: "", capacity: "", hourlyRate: "", amenities: "" };
 
 export default function BookingsClient({ bookings, rooms, centers, quota }: any) {
   const router = useRouter();
@@ -53,6 +53,9 @@ export default function BookingsClient({ bookings, rooms, centers, quota }: any)
           <div><label className="label">Hourly rate (₹)</label>
             <input className="input" type="number" min={0} value={room.hourlyRate} onChange={(e) => setRoom({ ...room, hourlyRate: e.target.value })} placeholder="0 = free / within quota" />
           </div>
+          <div className="sm:col-span-2"><label className="label">Amenities</label>
+            <input className="input" value={room.amenities} onChange={(e) => setRoom({ ...room, amenities: e.target.value })} placeholder="Comma-separated, e.g. Projector, Whiteboard, AC" />
+          </div>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => { setShowAddRoom(false); setRoom(EMPTY_ROOM); }}>Cancel</button>
             <button type="submit" className="btn-primary">Save Room</button>
@@ -97,8 +100,8 @@ export default function BookingsClient({ bookings, rooms, centers, quota }: any)
                 <td className="font-medium">{x.room.name}</td>
                 <td>{x.center.name}</td>
                 <td>{x.client?.companyName || x.bookedBy?.name}</td>
-                <td>{new Date(x.startTime).toLocaleString()}</td>
-                <td>{new Date(x.endTime).toLocaleString()}</td>
+                <td>{fmtDateTime(x.startTime)}</td>
+                <td>{fmtDateTime(x.endTime)}</td>
                 <td>{x.durationHrs?.toFixed(1)}</td>
                 <td>{x.isChargeable ? fmtINR(x.chargedAmount) : "Within quota"}</td>
                 <td>{x.status}</td>

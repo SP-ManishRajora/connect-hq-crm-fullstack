@@ -127,7 +127,7 @@ export default function AuditLogsPage() {
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                    {new Date(log.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                    {new Date(log.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-medium">{log.user?.name || "system"}</div>

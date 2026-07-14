@@ -97,7 +97,38 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
     }
   }
 
-  async function sendOps(id: string) { await fetch(`/api/clients/${id}/send-ops`, { method: "POST" }); router.refresh(); }
+  // Compose-email popup before sending to a client.
+  const [mailFor, setMailFor] = useState<any>(null); // the client being emailed, or null
+  const [mailSubject, setMailSubject] = useState("");
+  const [mailBody, setMailBody] = useState("");
+  const [mailBusy, setMailBusy] = useState(false);
+
+  function openSendMail(c: any) {
+    if (!c.email) { alert("This client has no email address."); return; }
+    setMailFor(c);
+    setMailSubject(`Welcome to ${c.center?.name || "our center"} — onboarding`);
+    setMailBody(
+      `Dear ${c.contactName || c.companyName},\n\n` +
+      `Welcome aboard! Your onboarding at ${c.center?.name || "our center"} is being processed.\n` +
+      `Start date: ${c.startDate ? fmtDate(c.startDate) : "—"}\n` +
+      `Seats: ${c.occupiedSeats || 0}\n\n` +
+      `Our team will reach out with the next steps. Please reply to this email with any questions.\n\n` +
+      `Regards,\nTeam Coworking ERP`,
+    );
+  }
+
+  async function sendMailNow() {
+    if (!mailFor) return;
+    if (!mailSubject.trim() || !mailBody.trim()) { alert("Subject and body are required."); return; }
+    setMailBusy(true);
+    const r = await fetch(`/api/clients/${mailFor.id}/send-ops`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: mailSubject.trim(), body: mailBody.trim() }),
+    });
+    setMailBusy(false);
+    if (r.ok) { setMailFor(null); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to send"); }
+  }
   async function confirmCM(id: string) { await fetch(`/api/clients/${id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ side: "CM" }) }); router.refresh(); }
   async function confirmClient(id: string) { await fetch(`/api/clients/${id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ side: "CLIENT" }) }); router.refresh(); }
 
@@ -111,6 +142,37 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
           <button type="button" className="btn-primary" onClick={() => { setShowOnboard(!showOnboard); setShowDirect(false); }}>+ Onboard from Proposal</button>
         </div>
       </div>
+
+      {/* Compose email to client (review/edit before sending) */}
+      {mailFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !mailBusy && setMailFor(null)}>
+          <div className="card w-full max-w-lg space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="h2">Send email to client</h2>
+              <button type="button" className="btn-ghost text-sm" onClick={() => setMailFor(null)} disabled={mailBusy}>✕</button>
+            </div>
+            <div>
+              <label className="label">To</label>
+              <input className="input bg-gray-50" value={mailFor.email} readOnly title="Recipient" />
+              <p className="muted text-xs mt-1">{mailFor.companyName}{mailFor.center?.name ? ` · ${mailFor.center.name}` : ""}</p>
+            </div>
+            <div>
+              <label className="label">Subject *</label>
+              <input className="input" value={mailSubject} onChange={(e) => setMailSubject(e.target.value)} title="Subject" />
+            </div>
+            <div>
+              <label className="label">Message *</label>
+              <textarea className="input" rows={9} value={mailBody} onChange={(e) => setMailBody(e.target.value)} title="Message body" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-ghost" onClick={() => setMailFor(null)} disabled={mailBusy}>Cancel</button>
+              <button type="button" className="btn-primary disabled:opacity-50" disabled={mailBusy || !mailSubject.trim() || !mailBody.trim()} onClick={sendMailNow}>
+                {mailBusy ? "Sending…" : "Send email"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBulk && (
         <div className="card space-y-3">
@@ -253,7 +315,7 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
                   <td>{c.cabin?.name || "Open"}</td>
                   <td>{c.occupiedSeats || 0}/{c.totalCabinSeats || 0}</td>
                   <td>{fmtDate(c.startDate)}</td>
-                  <td>{c.sentToOps ? "✅" : <button className="btn-ghost text-xs" onClick={() => sendOps(c.id)}>Send</button>}</td>
+                  <td>{c.sentToOps ? "✅" : <button className="btn-ghost text-xs" onClick={() => openSendMail(c)}>Send</button>}</td>
                   <td>{c.cmConfirmed ? "✅" : <button className="btn-ghost text-xs" onClick={() => confirmCM(c.id)}>CM</button>}</td>
                   <td>{c.clientConfirmed ? "✅" : <button className="btn-ghost text-xs" onClick={() => confirmClient(c.id)}>Client</button>}</td>
                   <td><Link href={`/clients/${c.id}`} className="text-brand-600 text-xs">Open →</Link></td>

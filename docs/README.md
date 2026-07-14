@@ -10,6 +10,9 @@ All project documentation lives here. Start with whichever section fits your nee
 - **[CHANGELOG.md](./CHANGELOG.md)** — per-patch changelog of every functional change shipped.
 - **[feature-log.md](./feature-log.md)** — requirement → implementation log for recent feature work (occupancy module, proposals email/PDF, lead status, comment edits, searchable category combobox, etc.).
 
+## 👤 Client portal & booking (in-depth)
+- **[client-portal-booking.md](./client-portal-booking.md)** — client login, emailed-invite self-registration, password reset, meeting-room browsing/filtering, booking rules (conflict + past-date + quota), cancellation rules, login cap, files, env, and QA checklist.
+
 ## 🪑 Occupancy module (in-depth)
 - **[occupancy-module.md](./occupancy-module.md)** — design, decisions, phase plan, schema, RBAC, events, and convergence with Seat Map. The source of truth for the module across sessions.
 - **[occupancy-and-seatmap-functionality.md](./occupancy-and-seatmap-functionality.md)** — behavior-focused reference: what Occupancy and Seat Map do and the business rules that govern them.
