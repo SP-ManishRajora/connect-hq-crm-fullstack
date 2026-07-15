@@ -5,19 +5,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Connect HQ brand — violet, anchored on the logo purple (#4d2a98),
-        // which lands between brand-700 and brand-900.
+        // Connect HQ brand — indigo-violet (Option D): a softer, bluer take that
+        // still complements the logo purple. Primary (600) = #4f46e5.
         brand: {
-          50: "#f5f3ff",
-          100: "#ede9fe",
-          200: "#ddd6fe",
-          300: "#c4b5fd",
-          400: "#a78bfa",
-          500: "#7c3aed",
-          600: "#6d28d9",
-          700: "#5b21b6",
-          800: "#4c1d95",
-          900: "#3b1478",
+          50: "#eef2ff",
+          100: "#e0e7ff",
+          200: "#c7d2fe",
+          300: "#a5b4fc",
+          400: "#818cf8",
+          500: "#6366f1",
+          600: "#4f46e5",
+          700: "#4338ca",
+          800: "#3730a3",
+          900: "#312e81",
         },
         // Charcoal from the logo's "C" / wordmark — for dark surfaces & headings.
         charcoal: {

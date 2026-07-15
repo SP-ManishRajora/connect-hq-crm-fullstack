@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  /* Very light violet-tinted page background — complements the brand without tinting content. */
-  --bg: #f7f6fb;
+  /* Very light indigo-tinted page background — complements the brand without tinting content. */
+  --bg: #f5f6fb;
 }
 html, body { background: var(--bg); }
 body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
