@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
+import { requireRole } from "@/lib/rbac";
 
 // GET — list all bookings (visible to all logged-in users incl. clients)
 export async function GET() {
@@ -28,9 +29,22 @@ export async function POST(req: NextRequest) {
   }
   const durationHrs = (end.getTime() - start.getTime()) / 3600000;
   if (durationHrs <= 0) return NextResponse.json({ error: "Invalid time range" }, { status: 400 });
-  // Business rule: no bookings for past start times.
-  if (start.getTime() < Date.now()) {
-    return NextResponse.json({ error: "Cannot book a slot in the past" }, { status: 400 });
+
+  // Past (back-dated / late-entry) bookings:
+  //   - Only ADMIN and CENTER_MANAGER may book a slot whose start is in the past.
+  //   - Everyone else (incl. CLIENT) is blocked.
+  //   - A back-dated booking MUST carry a non-empty reason for the late entry.
+  const isPast = start.getTime() < Date.now();
+  const canBackdate = requireRole(u.role, ["ADMIN", "CENTER_MANAGER"]);
+  let lateEntryReason: string | null = null;
+  if (isPast) {
+    if (!canBackdate) {
+      return NextResponse.json({ error: "Cannot book a slot in the past" }, { status: 400 });
+    }
+    lateEntryReason = String(b.lateEntryReason || "").trim();
+    if (!lateEntryReason) {
+      return NextResponse.json({ error: "A reason is required for a past (late-entry) booking" }, { status: 400 });
+    }
   }
 
   // overlap check
@@ -105,6 +119,7 @@ export async function POST(req: NextRequest) {
       isChargeable,
       chargedAmount,
       notes: b.notes || null,
+      lateEntryReason,
     },
   });
   return NextResponse.json(booking);

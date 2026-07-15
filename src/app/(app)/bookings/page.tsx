@@ -9,6 +9,8 @@ export default async function Page() {
 
   // Staff who may book on behalf of any client (or, for a CM, their own center).
   const canBookOnBehalf = requireRole(me?.role, ["ADMIN", "OWNER", "CENTER_MANAGER", "SALES", "OPS"]);
+  // Only ADMIN and CENTER_MANAGER may browse/book past dates (late entry, with a reason).
+  const canBackdate = requireRole(me?.role, ["ADMIN", "CENTER_MANAGER"]);
 
   const [bookings, rooms, centers, clients] = await Promise.all([
     prisma.booking.findMany({ orderBy: { startTime: "desc" }, include: { room: true, center: true, bookedBy: true, client: true }, take: 500 }),
@@ -52,6 +54,7 @@ export default async function Page() {
       quota={quota}
       me={me ? { id: me.id, role: me.role, centerId: me.centerId } : null}
       canBookOnBehalf={canBookOnBehalf}
+      canBackdate={canBackdate}
     />
   );
 }

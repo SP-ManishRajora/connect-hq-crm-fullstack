@@ -474,6 +474,7 @@ model Booking {
   isChargeable Boolean @default(false)   // true if this booking is past quota
   chargedAmount Float  @default(0)
   notes         String?  @db.Text
+  lateEntryReason String? @db.Text   // required when ADMIN/CM back-dates a booking (start in the past)
   status    String   @default("CONFIRMED")
   createdAt DateTime @default(now())
 }

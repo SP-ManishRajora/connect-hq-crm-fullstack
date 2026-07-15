@@ -133,7 +133,7 @@ Creation: `POST /api/bookings` (pre-existing, extended). Validation order:
 1. Auth required (401 otherwise).
 2. Room must exist.
 3. Valid date/time and `end > start` (else 400).
-4. **No past start times** (`start < now` → 400). *(Added by this feature.)*
+4. **Past (back-dated / late-entry) bookings** — a start time before *now* is allowed **only for ADMIN and CENTER_MANAGER**, and **requires a non-empty `lateEntryReason`** (stored on the booking). Every other role (incl. CLIENT, OWNER, SALES, OPS) is blocked with 400 "Cannot book a slot in the past". A blank/whitespace reason from an allowed role → 400.
 5. **No overlap** with a `CONFIRMED` booking on that room (else **409**).
 6. **Quota / charge:** for a resolved client, monthly quota = `occupiedSeats × 2` hours. Hours beyond the remaining quota are `isChargeable` at `room.hourlyRate`. Non-client / walk-in bookings are fully chargeable.
 
@@ -164,6 +164,7 @@ The bookings page (module `bookings`, visible to all roles incl. CLIENT) shows a
 - **Calendar / List** view toggle (list retains the sortable table).
 - Staff (ADMIN/OWNER/CENTER_MANAGER/SALES/OPS) see a **"Book on behalf of client"** picker in the form (CM's picker is scoped to their center); the "+ Add Room" button shows only for ADMIN/OWNER/CENTER_MANAGER.
 - Users can **cancel their own** bookings inline (subject to the §2 cutoff rules).
+- **Past dates:** for non-back-date roles (clients and everyone except ADMIN/CM) the calendar **disables past hour-cells** (greyed, not clickable) and **blocks paging to a fully-past week** ("Past dates unavailable"). ADMIN/CENTER_MANAGER can browse past weeks and click a past slot; doing so reveals a required **"Reason for late entry"** textbox in the form, and the booking is tagged **"late entry"** (with the reason as a tooltip) in the List view. The client-side guard mirrors the server rule in §5 — the API is the enforcing boundary.
 
 The week grid initializes on the client (in `useEffect`) so "today" never differs between server and client render — avoiding hydration mismatches.
 

@@ -37,14 +37,20 @@ function toLocalInput(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function BookingsClient({ bookings, rooms, centers, clients = [], quota, me, canBookOnBehalf }: any) {
+export default function BookingsClient({ bookings, rooms, centers, clients = [], quota, me, canBookOnBehalf, canBackdate }: any) {
   const router = useRouter();
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [show, setShow] = useState(false);
   const [showAddRoom, setShowAddRoom] = useState(false);
-  const [b, setB] = useState<any>({ roomId: "", startTime: "", endTime: "", notes: "", clientId: "" });
+  const [b, setB] = useState<any>({ roomId: "", startTime: "", endTime: "", notes: "", clientId: "", lateEntryReason: "" });
   const [room, setRoom] = useState<any>(EMPTY_ROOM);
   const [err, setErr] = useState<string | null>(null);
+
+  // Whether the currently-selected start time is in the past (drives the reason box).
+  const startIsPast = useMemo(() => {
+    if (!b.startTime) return false;
+    return new Date(b.startTime).getTime() < Date.now();
+  }, [b.startTime]);
 
   // Filters
   const [centerFilter, setCenterFilter] = useState("");
@@ -82,10 +88,19 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (startIsPast && !canBackdate) {
+      setErr("Bookings cannot be made for a past date/time.");
+      return;
+    }
+    if (startIsPast && canBackdate && !String(b.lateEntryReason || "").trim()) {
+      setErr("Please enter a reason for this past (late-entry) booking.");
+      return;
+    }
     const payload: any = { roomId: b.roomId, startTime: b.startTime, endTime: b.endTime, notes: b.notes };
     if (isStaff && b.clientId) payload.clientId = b.clientId;
+    if (startIsPast && canBackdate) payload.lateEntryReason = b.lateEntryReason;
     const r = await fetch("/api/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (r.ok) { setShow(false); setB({ roomId: "", startTime: "", endTime: "", notes: "", clientId: "" }); router.refresh(); }
+    if (r.ok) { setShow(false); setB({ roomId: "", startTime: "", endTime: "", notes: "", clientId: "", lateEntryReason: "" }); router.refresh(); }
     else { const j = await r.json().catch(() => ({})); setErr(j.error || "Failed"); }
   }
 
@@ -107,12 +122,15 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
   function openSlot(day: Date, hour: number) {
     const start = new Date(day); start.setHours(hour, 0, 0, 0);
     const end = new Date(start); end.setHours(hour + 1, 0, 0, 0);
+    // Clients (and other non-backdate roles) cannot book past slots.
+    if (start.getTime() < Date.now() && !canBackdate) return;
     setErr(null);
     setB((prev: any) => ({
       ...prev,
       roomId: roomFilter || prev.roomId || (roomsInScope[0]?.id ?? ""),
       startTime: toLocalInput(start),
       endTime: toLocalInput(end),
+      lateEntryReason: "",
     }));
     setShow(true);
   }
@@ -120,6 +138,9 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
   const weekDays = weekStart ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
   const hours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => DAY_START_HOUR + i);
   const now = weekStart ? new Date() : null;
+  const todayStart = weekStart ? startOfWeek(new Date()) : null; // used to gate past-week navigation
+  // Non-backdate users can't page to a week entirely in the past.
+  const prevWeekAllowed = canBackdate || (weekStart && todayStart ? weekStart > todayStart : true);
 
   return (
     <div className="space-y-4">
@@ -153,10 +174,11 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
         </div>
         {view === "calendar" && weekStart && (
           <div className="flex items-center gap-2 ml-auto">
-            <button type="button" className="btn-ghost" onClick={() => setWeekStart(addDays(weekStart, -7))}>← Prev</button>
+            <button type="button" className="btn-ghost disabled:opacity-40" disabled={!prevWeekAllowed} title={prevWeekAllowed ? "" : "Past dates are not available"} onClick={() => prevWeekAllowed && setWeekStart(addDays(weekStart, -7))}>← Prev</button>
             <button type="button" className="btn-ghost" onClick={() => setWeekStart(startOfWeek(new Date()))}>Today</button>
             <button type="button" className="btn-ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>Next →</button>
             <span className="text-sm muted">{weekDays[0]?.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} – {weekDays[6]?.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+            {!canBackdate && <span className="text-xs muted">Past dates unavailable</span>}
           </div>
         )}
       </div>
@@ -222,6 +244,16 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
           )}
           <div><label className="label">Start *</label><input className="input" type="datetime-local" required value={b.startTime} onChange={(e) => setB({ ...b, startTime: e.target.value })} /></div>
           <div><label className="label">End *</label><input className="input" type="datetime-local" required value={b.endTime} onChange={(e) => setB({ ...b, endTime: e.target.value })} /></div>
+          {startIsPast && !canBackdate && (
+            <p className="sm:col-span-2 text-rose-600 text-sm">Bookings cannot be made for a past date/time.</p>
+          )}
+          {startIsPast && canBackdate && (
+            <div className="sm:col-span-2 rounded border border-amber-300 bg-amber-50 p-3">
+              <label className="label text-amber-900">Reason for late entry (past booking) *</label>
+              <textarea className="input" rows={2} required value={b.lateEntryReason} onChange={(e) => setB({ ...b, lateEntryReason: e.target.value })} placeholder="Why is this booking being recorded for a past date/time?" />
+              <p className="muted text-xs mt-1">This booking's start time is in the past. A reason is required and will be stored with the booking.</p>
+            </div>
+          )}
           <div className="sm:col-span-2"><label className="label">Notes</label><input className="input" value={b.notes} onChange={(e) => setB({ ...b, notes: e.target.value })} /></div>
           {err && <p className="sm:col-span-2 text-red-600 text-sm">{err}</p>}
           <div className="sm:col-span-2 flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={() => setShow(false)}>Cancel</button><button className="btn-primary">Confirm Booking</button></div>
@@ -262,17 +294,23 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
                   const dayBookings = visibleBookings.filter((x: any) => sameDay(new Date(x.startTime), day));
                   return (
                     <div key={di} className="relative border-r" style={{ height: HOUR_PX * hours.length }}>
-                      {/* Hour cells (clickable to book) */}
-                      {hours.map((h) => (
-                        <button
-                          key={h}
-                          type="button"
-                          title="Book this slot"
-                          onClick={() => openSlot(day, h)}
-                          className="block w-full border-b border-gray-100 hover:bg-brand-50/60"
-                          style={{ height: HOUR_PX }}
-                        />
-                      ))}
+                      {/* Hour cells (clickable to book). Past slots are disabled for non-backdate roles. */}
+                      {hours.map((h) => {
+                        const cell = new Date(day); cell.setHours(h, 0, 0, 0);
+                        const isPastCell = now ? cell.getTime() < now.getTime() : false;
+                        const disabled = isPastCell && !canBackdate;
+                        return (
+                          <button
+                            key={h}
+                            type="button"
+                            disabled={disabled}
+                            title={disabled ? "Past dates are not available" : "Book this slot"}
+                            onClick={() => openSlot(day, h)}
+                            className={`block w-full border-b border-gray-100 ${disabled ? "bg-gray-100/70 cursor-not-allowed" : "hover:bg-brand-50/60"}`}
+                            style={{ height: HOUR_PX }}
+                          />
+                        );
+                      })}
                       {/* Booking blocks */}
                       {dayBookings.map((x: any) => {
                         const s = new Date(x.startTime);
@@ -316,7 +354,10 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
                   <td className="font-medium">{x.room?.name}</td>
                   <td>{x.center?.name}</td>
                   <td>{x.client?.companyName || x.bookedBy?.name}</td>
-                  <td>{fmtDateTime(x.startTime)}</td>
+                  <td>
+                    {fmtDateTime(x.startTime)}
+                    {x.lateEntryReason && <span className="badge bg-amber-100 text-amber-800 ml-1" title={`Late entry: ${x.lateEntryReason}`}>late entry</span>}
+                  </td>
                   <td>{fmtDateTime(x.endTime)}</td>
                   <td>{x.durationHrs?.toFixed(1)}</td>
                   <td>{x.isChargeable ? fmtINR(x.chargedAmount) : "Within quota"}</td>
