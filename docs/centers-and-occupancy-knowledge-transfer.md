@@ -245,3 +245,4 @@ There are **two** audit trails to be aware of:
 - [`docs/occupancy-module.md`](occupancy-module.md)
 - [`docs/occupancy-and-seatmap-functionality.md`](occupancy-and-seatmap-functionality.md)
 - [`docs/project-documentation.md`](project-documentation.md)
+
