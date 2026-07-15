@@ -26,7 +26,7 @@ coworking-erp/
 ├── prisma/
 │   ├── schema.prisma  ← Database schema (like migrations/)
 │   ├── seed.ts        ← Demo data seeder
-│   └── dev.db         ← SQLite file (NOT for production — switch to Postgres)
+│   └── dev.db         ← SQLite file (NOT for production — switch to MySQL)
 ├── public/
 │   └── uploads/       ← File uploads land here (like storage/app/public)
 ├── package.json       ← Like composer.json
@@ -81,31 +81,31 @@ npm -v    # should print 10.x.x
 
 ---
 
-## Step 4 — Install PostgreSQL (Switch Away from SQLite)
+## Step 4 — Install MySQL (Switch Away from SQLite)
 
-> SQLite (`dev.db` file) is fine locally but **not suitable for production**. Switch to PostgreSQL — the `prisma/schema.prisma` is already portable.
+> SQLite (`dev.db` file) is fine locally but **not suitable for production**. This app's `prisma/schema.prisma` targets **MySQL** (`datasource db { provider = "mysql" }`), and the live database is `connect_hq_crm`.
 
 ```bash
-# Install PostgreSQL
+# Install MySQL server
 sudo apt update
-sudo apt install -y postgresql postgresql-contrib
+sudo apt install -y mysql-server
 
 # Start and enable on boot
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
+sudo systemctl start mysql
+sudo systemctl enable mysql
 
 # Create database and user
-sudo -u postgres psql <<EOF
-CREATE DATABASE coworking_erp;
-CREATE USER erp_user WITH ENCRYPTED PASSWORD 'Secret@123ConnectHqErp';
-GRANT ALL PRIVILEGES ON DATABASE coworking_erp TO erp_user;
-\q
+sudo mysql <<'EOF'
+CREATE DATABASE IF NOT EXISTS connect_hq_crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'erp_user'@'localhost' IDENTIFIED BY 'Secret@123ConnectHqErp';
+GRANT ALL PRIVILEGES ON connect_hq_crm.* TO 'erp_user'@'localhost';
+FLUSH PRIVILEGES;
 EOF
 ```
 
-Your `DATABASE_URL` will be:
+Your `DATABASE_URL` will be (URL-encode special chars in the password — e.g. `@` → `%40`):
 ```
-postgresql://erp_user:Secret@123ConnectHqErp@localhost:5432/coworking_erp
+mysql://erp_user:Secret%40123ConnectHqErp@localhost:3306/connect_hq_crm
 ```
 
 ---
@@ -152,8 +152,8 @@ nano .env
 Fill in `.env` like this:
 
 ```env
-# Switch from SQLite to PostgreSQL
-DATABASE_URL="postgresql://erp_user:your_strong_password_here@localhost:5432/coworking_erp"
+# Switch from SQLite to MySQL (URL-encode special chars in the password)
+DATABASE_URL="mysql://erp_user:your_strong_password_here@localhost:3306/connect_hq_crm"
 
 # Generate a strong secret: openssl rand -base64 64
 JWT_SECRET="paste-a-long-random-64-char-string-here"
@@ -193,8 +193,9 @@ cd /var/www/coworking-erp
 # Install dependencies (production + dev, needed for build)
 npm install
 
-# Run Prisma migration (creates tables in PostgreSQL — like php artisan migrate)
-npx prisma db push
+# Apply migrations to MySQL (like php artisan migrate). On an existing prod DB
+# use migrate deploy so no data is dropped; first-time/empty DB can use db push.
+npx prisma migrate deploy
 
 # Optional: seed demo data (like php artisan db:seed)
 # npm run db:seed
@@ -451,14 +452,14 @@ sudo tail -f /var/log/nginx/error.log
 
 ### Prisma "P1001: Can't reach database server"
 ```bash
-# Check PostgreSQL is running
-sudo systemctl status postgresql
+# Check MySQL is running
+sudo systemctl status mysql
 
 # Test the connection manually
-psql -U erp_user -h localhost -d coworking_erp -c "SELECT 1;"
+mysql -u erp_user -p -h localhost connect_hq_crm -e "SELECT 1;"
 
-# Re-run migration
-npx prisma db push
+# Re-apply migrations
+npx prisma migrate deploy
 ```
 
 ---
