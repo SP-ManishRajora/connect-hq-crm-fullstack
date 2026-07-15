@@ -241,6 +241,8 @@ pm2 save
 
 > At this point your app is running on `http://your-server-ip:3000`. Next, we expose it on port 80/443 via Nginx.
 
+> ⚠️ **Run exactly ONE instance in fork mode.** `next start` binds a single port (3000) and **cannot run in PM2 cluster mode or scaled to multiple instances** — doing so causes a crash loop with `Error: listen EADDRINUSE :::3000`. Do **not** run `pm2 scale coworking-erp 2` or add `instances: 2` to a PM2 ecosystem file. If you need more capacity, run separate instances on different ports (`PORT=3001 …`) and load-balance them in Nginx. To confirm you have one instance: `pm2 status` should show a single `coworking-erp` row.
+
 ---
 
 ## Step 9 — Configure Nginx as Reverse Proxy
@@ -401,6 +403,34 @@ ss -tlnp | grep 3000
 # Manually run the app to see errors directly in terminal
 npm run start
 ```
+
+---
+
+### `Error: listen EADDRINUSE: address already in use :::3000`
+The port is already taken — almost always because **PM2 is running more than one instance** of the app (logs show both `0|coworking-erp` and `2|coworking-erp` prefixes), or a stray `next start` is still alive. `next start` is single-port and must run as **one instance in fork mode**.
+```bash
+# See what's on 3000
+ss -tlnp | grep 3000
+
+# Remove the app completely (clears any scaled/cluster instances) and start ONE
+pm2 delete coworking-erp
+pm2 start npm --name "coworking-erp" -- start   # fork mode, single instance
+pm2 status                                       # must show exactly ONE row
+pm2 save
+```
+If a non-PM2 process holds the port: `kill $(ss -tlnp 'sport = :3000' | grep -oP 'pid=\K[0-9]+' | head -1)`, then start PM2.
+
+---
+
+### `Error: ENOENT: ... .next/prerender-manifest.json`
+The app was started with `next start` **before `next build` completed**, so the `.next` production build is missing or partial. This also happens if `.next/` was deleted or the build errored out.
+```bash
+cd /var/www/coworking-erp
+npm run build                       # must finish with NO errors
+ls .next/prerender-manifest.json    # confirm it now exists
+pm2 reload coworking-erp
+```
+**Golden rule:** always `npm run build` **before** `pm2 reload/start`. After pulling changes that add new pages/routes, a rebuild is mandatory (see `npm run build && pm2 reload coworking-erp`).
 
 ---
 
