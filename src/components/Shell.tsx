@@ -70,7 +70,9 @@ export default function Shell({ user, children }: { user: SessionUser; children:
       </header>
       <aside className={`${open ? "block" : "hidden"} lg:block lg:w-64 bg-gray-900 text-gray-200 flex-shrink-0 lg:min-h-screen p-4 lg:sticky lg:top-0 lg:h-screen overflow-y-auto`}>
         <div className="mb-6 hidden lg:block">
-          <img src="/logo-white.png" alt="Connect HQ" className="w-full h-auto max-h-16 object-contain" />
+          <div className="bg-white/95 ring-1 ring-white/15 rounded-lg p-3 shadow-md flex items-center justify-center">
+            <img src="/logo.png" alt="Connect HQ" className="w-full h-auto max-h-14 object-contain" />
+          </div>
           <div className="text-xs text-gray-400 mt-2 text-center">{user.role}</div>
         </div>
         {visibleGroups.map((g) => (
