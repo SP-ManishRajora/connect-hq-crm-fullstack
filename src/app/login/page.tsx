@@ -33,8 +33,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-white p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-block bg-brand-600 text-white font-bold text-2xl rounded-lg px-4 py-2 mb-3">CW</div>
-          <h1 className="text-2xl font-bold text-gray-900">Coworking ERP</h1>
+          <img src="/logo.png" alt="Connect HQ" className="mx-auto w-48 h-auto mb-3" />
           <p className="text-sm text-gray-500 mt-1">Sign in to continue</p>
         </div>
         <form onSubmit={submit} className="card space-y-4">

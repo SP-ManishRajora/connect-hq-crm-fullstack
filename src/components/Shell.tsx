@@ -65,13 +65,15 @@ export default function Shell({ user, children }: { user: SessionUser; children:
     <div className="min-h-screen flex flex-col lg:flex-row">
       <header className="lg:hidden flex items-center justify-between bg-white border-b px-4 py-3 sticky top-0 z-30">
         <button className="text-gray-600" onClick={() => setOpen(!open)}>☰</button>
-        <div className="font-bold text-brand-700">Coworking ERP</div>
+        <img src="/logo.png" alt="Connect HQ" className="h-8 w-auto" />
         <button onClick={logout} className="text-xs text-gray-500">Logout</button>
       </header>
       <aside className={`${open ? "block" : "hidden"} lg:block lg:w-64 bg-gray-900 text-gray-200 flex-shrink-0 lg:min-h-screen p-4 lg:sticky lg:top-0 lg:h-screen overflow-y-auto`}>
-        <div className="mb-6 hidden lg:flex items-center gap-2">
-          <div className="bg-brand-600 text-white font-bold rounded-md px-2 py-1 text-sm">CW</div>
-          <div><div className="font-bold text-white">Coworking ERP</div><div className="text-xs text-gray-400">{user.role}</div></div>
+        <div className="mb-6 hidden lg:block">
+          <div className="bg-white rounded-md p-2 flex items-center justify-center">
+            <img src="/logo.png" alt="Connect HQ" className="w-full h-auto max-h-16 object-contain" />
+          </div>
+          <div className="text-xs text-gray-400 mt-2 text-center">{user.role}</div>
         </div>
         {visibleGroups.map((g) => (
           <div key={g.title} className="mb-4">

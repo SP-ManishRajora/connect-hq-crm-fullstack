@@ -27,7 +27,7 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-white p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-block bg-brand-600 text-white font-bold text-2xl rounded-lg px-4 py-2 mb-3">CW</div>
+          <img src="/logo.png" alt="Connect HQ" className="mx-auto w-40 h-auto mb-3" />
           <h1 className="text-2xl font-bold text-gray-900">Reset your password</h1>
         </div>
         {sent ? (

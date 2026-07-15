@@ -21,6 +21,9 @@ function isPublic(pathname: string) {
   if (pathname.startsWith("/qr/")) return true;
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) return true;
   if (pathname.startsWith("/uploads/")) return true;
+  // Public static assets (logo etc.) served from /public — needed on the unauthenticated login page.
+  if (pathname === "/logo.png") return true;
+  if (/\.(png|jpg|jpeg|svg|gif|webp|ico)$/i.test(pathname)) return true;
   return false;
 }
 
