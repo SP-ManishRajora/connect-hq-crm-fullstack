@@ -39,11 +39,33 @@ export async function POST(req: NextRequest) {
   });
   if (clash) return NextResponse.json({ error: "Room already booked for that slot" }, { status: 409 });
 
-  // determine clientId & quota
-  let clientId: string | null = b.clientId || null;
-  if (!clientId && u.role === "CLIENT") {
-    const c = await prisma.client.findFirst({ where: { OR: [{ email: u.email }, { employees: { some: { id: u.id } } }] } });
-    clientId = c?.id || null;
+  // Resolve the CLIENT record for the caller (if they are a client / employee).
+  const ownClient =
+    u.role === "CLIENT"
+      ? await prisma.client.findFirst({ where: { OR: [{ email: u.email }, { employees: { some: { id: u.id } } }] } })
+      : null;
+
+  // Determine clientId with authorization for on-behalf bookings:
+  //   CLIENT           → only their own client (a supplied clientId must match).
+  //   CENTER_MANAGER   → any client in their own center.
+  //   ADMIN / OWNER    → any client.
+  //   SALES / OPS      → any client (they manage bookings for the center).
+  let clientId: string | null = null;
+  const requestedClientId: string | null = b.clientId || null;
+
+  if (u.role === "CLIENT") {
+    // Clients can never book for another client; always pin to their own.
+    if (requestedClientId && ownClient && requestedClientId !== ownClient.id) {
+      return NextResponse.json({ error: "You can only book for your own company" }, { status: 403 });
+    }
+    clientId = ownClient?.id || null;
+  } else if (requestedClientId) {
+    const target = await prisma.client.findUnique({ where: { id: requestedClientId } });
+    if (!target) return NextResponse.json({ error: "Client not found" }, { status: 400 });
+    if (u.role === "CENTER_MANAGER" && u.centerId && target.centerId !== u.centerId) {
+      return NextResponse.json({ error: "You can only book for clients in your own center" }, { status: 403 });
+    }
+    clientId = target.id;
   }
 
   let isChargeable = false;

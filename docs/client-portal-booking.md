@@ -142,6 +142,31 @@ The client is resolved from the session user by **email or employer link**:
 
 Cancellation: `POST /api/bookings/[id]/cancel` sets `status: "CANCELLED"` — see §2 for the rules. Rejects already-cancelled bookings (400) and non-owned bookings for clients (403).
 
+### On-behalf booking (who can book for which client)
+
+`POST /api/bookings` accepts an optional `clientId` and authorizes it by role:
+
+| Caller role | Allowed `clientId` |
+|-------------|--------------------|
+| CLIENT | Only their own client — a mismatched `clientId` → **403**. Omitting it auto-pins to their client. |
+| CENTER_MANAGER | Any client **in their own center** — others → **403**. |
+| ADMIN / OWNER | Any client. |
+| SALES / OPS | Any client (they manage the center's bookings). |
+
+An unknown `clientId` → **400**. Charges and monthly quota always apply to the **resolved** client, not the caller. When no client resolves (staff walk-in), the booking is fully chargeable at the room rate.
+
+### Schedule calendar (`/bookings`)
+
+The bookings page (module `bookings`, visible to all roles incl. CLIENT) shows a **week-view calendar** of all `CONFIRMED` bookings — any logged-in user can see the schedule. Features:
+- 8am–8pm week grid, 7 day columns, blocks colored per room; week **Prev / Today / Next** navigation.
+- **Center** and **Room** filters.
+- **Click an empty slot** to open the booking form prefilled with that day/hour.
+- **Calendar / List** view toggle (list retains the sortable table).
+- Staff (ADMIN/OWNER/CENTER_MANAGER/SALES/OPS) see a **"Book on behalf of client"** picker in the form (CM's picker is scoped to their center); the "+ Add Room" button shows only for ADMIN/OWNER/CENTER_MANAGER.
+- Users can **cancel their own** bookings inline (subject to the §2 cutoff rules).
+
+The week grid initializes on the client (in `useEffect`) so "today" never differs between server and client render — avoiding hydration mismatches.
+
 ---
 
 ## 6. Client Dashboard (`/client-portal`)
