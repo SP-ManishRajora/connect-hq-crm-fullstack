@@ -44,6 +44,7 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
   { title: "Service", items: [
     { mod: "tickets", href: "/tickets", label: "Tickets", icon: "🎫" },
     { mod: "notices", href: "/notices", label: "Notice Board / Ads", icon: "📢" },
+    { mod: "reviews", href: "/reviews", label: "Reviews / Feedback", icon: "⭐" },
     { mod: "sops", href: "/sops", label: "SOPs", icon: "📚" },
   ]},
   { title: "Admin", items: [

@@ -38,6 +38,7 @@ model User {
   prsRaised         PurchaseRequest[]
   posIssued         PurchaseOrder[]
   comments          Comment[]
+  reviewsCreated    Review[]      @relation("ReviewCreator")
   commentEdits      CommentEdit[]
   attendance        AttendanceLog[]
   tickets           Ticket[]
@@ -881,4 +882,27 @@ model SpaceTransfer {
 
   @@index([batchId])
   @@index([spaceId])
+}
+
+// ============= REVIEWS / FEEDBACK =============
+// Feedback submitted by clients and visitors. Visitor-specific fields
+// (purposeOfVisit, visitorNote) are populated only when isVisitor is true.
+model Review {
+  id             String   @id @default(cuid())
+  name           String
+  phoneNumber    String
+  companyName    String
+  email          String?
+  feedback       String   @db.Text
+  isVisitor      Boolean  @default(false)
+  purposeOfVisit String?                    // required when isVisitor
+  status         String   @default("Active") // Active | Deleted
+  createdById    String?                     // staff user who captured it, if any
+  createdBy      User?    @relation("ReviewCreator", fields: [createdById], references: [id])
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([isVisitor])
 }

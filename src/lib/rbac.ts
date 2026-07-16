@@ -23,6 +23,7 @@ export const MODULE_ACCESS: Record<string, Role[]> = {
   bookings:     ["ADMIN", "OWNER", "CENTER_MANAGER", "OPS", "SALES", "CLIENT"],
   tickets:      ["ADMIN", "OWNER", "OPS", "CENTER_MANAGER", "IT"],
   notices:      ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER"],
+  reviews:      ["ADMIN", "OWNER", "MANAGER", "SALES", "OPS", "CENTER_MANAGER", "ACCOUNTS", "IT", "CLIENT"],
   referrals:    ["ADMIN", "OWNER", "MANAGER", "SALES", "ACCOUNTS"],
   accounts:     ["ADMIN", "OWNER", "ACCOUNTS"],
   attendance:   ["ADMIN", "OWNER", "OPS", "CENTER_MANAGER"],
