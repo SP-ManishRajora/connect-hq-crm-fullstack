@@ -49,12 +49,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const existingSeats = center.seats.length;
-  const newSeats = capacity * qty;
-  if (existingSeats + newSeats > center.totalSeats) {
-    return NextResponse.json({
-      error: `Would create ${newSeats} new seats. Existing ${existingSeats} + new ${newSeats} = ${existingSeats + newSeats} > totalSeats ${center.totalSeats}.`,
-    }, { status: 400 });
-  }
+  // Over-capacity is allowed: a center can hold more placed seats than its nominal
+  // totalSeats (the "seats left" figure in the UI simply goes negative).
 
   let seatCounter = existingSeats + 1;
   for (let i = 1; i <= qty; i++) {

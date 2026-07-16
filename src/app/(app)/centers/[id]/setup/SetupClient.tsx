@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -91,6 +91,16 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
   // === Cabin add ===
   const [newCab, setNewCab] = useState<any>({ name: "Cabin", capacity: 6, qty: 6, floorId: "", notes: "", photos: [] as string[] });
   const [cabinDetailsId, setCabinDetailsId] = useState<string | null>(null); // which cabin's details are expanded
+  const [newCabinId, setNewCabinId] = useState<string | null>(null); // just-added cabin, highlighted briefly
+  const newCabinRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll the just-added cabin into view and clear the highlight after a few seconds.
+  useEffect(() => {
+    if (!newCabinId) return;
+    newCabinRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setNewCabinId(null), 4000);
+    return () => clearTimeout(t);
+  }, [newCabinId]);
 
   // === Cabin edit ===
   const [editCab, setEditCab] = useState<any>(null); // { id, name, capacity, floorId, notes, photos[] } or null
@@ -127,11 +137,20 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
     e.preventDefault();
     // Qty = seats in this cabin → create ONE cabin whose capacity is that seat count.
     const seats = Number(newCab.qty);
+    if (!newCab.name?.trim()) { alert("Name is required."); return; }
+    if (!seats || seats < 1) { alert("Qty (seats) must be at least 1."); return; }
     const r = await fetch(`/api/centers/${center.id}/cabins`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newCab.name, capacity: seats, qty: 1, floorId: newCab.floorId, photos: newCab.photos }),
     });
-    if (r.ok) { setNewCab({ name: "Cabin", capacity: 6, qty: 6, floorId: "", notes: "", photos: [] }); router.refresh(); }
+    if (r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const created = j.cabins?.[0];
+      setNewCab({ name: "Cabin", capacity: 6, qty: 6, floorId: "", notes: "", photos: [] });
+      if (created?.id) setNewCabinId(created.id);
+      alert(`Cabin "${created?.name || newCab.name}" added.`);
+      router.refresh();
+    }
     else { const j = await r.json(); alert(j.error || "Failed"); }
   }
 
@@ -328,8 +347,8 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
         <div className="space-y-4">
           <form onSubmit={addCabin} className="card grid sm:grid-cols-6 gap-3">
             <h2 className="h2 sm:col-span-6">Add cabin</h2>
-            <div className="sm:col-span-2"><label className="label">Name</label><input className="input" value={newCab.name} onChange={(e) => setNewCab({ ...newCab, name: e.target.value })} placeholder="e.g. 6-Seater Cabin" /></div>
-            <div><label className="label">Qty (seats)</label><input className="input" type="number" min="1" value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
+            <div className="sm:col-span-2"><label className="label">Name *</label><input className="input" required value={newCab.name} onChange={(e) => setNewCab({ ...newCab, name: e.target.value })} placeholder="e.g. 6-Seater Cabin" /></div>
+            <div><label className="label">Qty (seats) *</label><input className="input" type="number" min="1" required value={newCab.qty} onChange={(e) => setNewCab({ ...newCab, qty: Number(e.target.value) })} /></div>
             <div><label className="label">Floor <span className="muted">(optional)</span></label>
               <select className="input" title="Floor" value={newCab.floorId} onChange={(e) => setNewCab({ ...newCab, floorId: e.target.value })}>
                 <option value="">— None —</option>
@@ -348,7 +367,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
               <p className="muted text-xs">
                 <strong>Qty</strong> = seats in this cabin. Creating it uses <strong>{Number(newCab.qty) || 0}</strong> of the center&apos;s <strong>{remainingSeats}</strong> unallocated seats → <strong>{remainingSeats - (Number(newCab.qty) || 0)}</strong> left.
               </p>
-              <button className="btn-primary" disabled={Number(newCab.qty) < 1 || Number(newCab.qty) > remainingSeats}>Add</button>
+              <button className="btn-primary" disabled={!newCab.name?.trim() || Number(newCab.qty) < 1}>Add</button>
             </div>
           </form>
 
@@ -414,10 +433,15 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
                   </div>
                 );
               }
+              const isNew = newCabinId === c.id;
               return (
-                <div key={c.id} className="card">
+                <div
+                  key={c.id}
+                  ref={isNew ? newCabinRef : undefined}
+                  className={`card transition-all duration-500 ${isNew ? "ring-2 ring-brand-500 bg-brand-50 shadow-lg" : ""}`}
+                >
                   <div className="flex items-start justify-between">
-                    <div className="font-medium">{c.name} <span className="text-xs text-gray-500">cap {c.capacity} · {c.seats.length} seats</span></div>
+                    <div className="font-medium">{c.name} {isNew && <span className="badge bg-brand-100 text-brand-700 text-[10px] align-middle">NEW</span>} <span className="text-xs text-gray-500">cap {c.capacity} · {c.seats.length} seats</span></div>
                     <div className="flex gap-2">
                       <button type="button" className="btn-ghost text-xs" onClick={() => startEditCabin(c)}>Edit</button>
                       <button type="button" className="btn-ghost text-xs" onClick={() => setCabinDetailsId(isOpen ? null : c.id)}>
