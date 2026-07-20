@@ -150,3 +150,65 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const updated = await prisma.cabin.update({ where: { id: cabinId }, data });
   return NextResponse.json(updated);
 }
+
+/**
+ * DELETE body: { cabinId }
+ *   - Removes the cabin and its auto-created seats.
+ *   - Refuses only on real occupancy: occupied/assigned seats, or live
+ *     allocations/reservations against the cabin's bridged Spaces (those carry a
+ *     required spaceId, so they'd block the delete at the DB level).
+ *   - Client / Proposal / Space links are all nullable FKs, so they're simply
+ *     detached; Spaces are soft-deleted the way the occupancy module expects.
+ */
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const u = await getSessionUser();
+  if (!canManageCenter(u, params.id)) return NextResponse.json({ error: "Not your center" }, { status: 403 });
+
+  const b = await req.json().catch(() => ({}));
+  const cabinId = String(b?.cabinId || "").trim();
+  if (!cabinId) return NextResponse.json({ error: "cabinId required" }, { status: 400 });
+
+  const cabin = await prisma.cabin.findUnique({ where: { id: cabinId }, include: { seats: true } });
+  if (!cabin || cabin.centerId !== params.id) return NextResponse.json({ error: "Cabin not found" }, { status: 404 });
+
+  const inUse = cabin.seats.filter((s) => s.occupied || s.assignedClientId).length;
+  if (inUse) {
+    return NextResponse.json({ error: `Cabin has ${inUse} occupied/assigned seat(s). Clear the assignment first.` }, { status: 400 });
+  }
+
+  // Spaces bridged to this cabin or to its seats — only the live (non-soft-deleted) ones matter.
+  const seatIds = cabin.seats.map((s) => s.id);
+  const spaces = await prisma.space.findMany({
+    where: { deletedAt: null, OR: [{ cabinId }, ...(seatIds.length ? [{ seatId: { in: seatIds } }] : [])] },
+    select: { id: true },
+  });
+  const spaceIds = spaces.map((s) => s.id);
+
+  if (spaceIds.length) {
+    const [allocs, resvs] = await Promise.all([
+      prisma.allocation.count({ where: { spaceId: { in: spaceIds }, status: "ACTIVE" } }),
+      prisma.reservation.count({ where: { spaceId: { in: spaceIds } } }),
+    ]);
+    const blockers: string[] = [];
+    if (allocs) blockers.push(`${allocs} active allocation(s)`);
+    if (resvs) blockers.push(`${resvs} reservation(s)`);
+    if (blockers.length) {
+      return NextResponse.json({ error: `Cabin has ${blockers.join(" and ")} in the occupancy module. Release them first.` }, { status: 400 });
+    }
+  }
+
+  const now = new Date();
+  await prisma.$transaction([
+    // Detach nullable references, soft-delete bridged spaces, then drop seats + cabin.
+    prisma.client.updateMany({ where: { cabinId }, data: { cabinId: null } }),
+    prisma.proposal.updateMany({ where: { cabinId }, data: { cabinId: null } }),
+    ...(spaceIds.length
+      ? [prisma.space.updateMany({ where: { id: { in: spaceIds } }, data: { deletedAt: now, cabinId: null, seatId: null } })]
+      : []),
+    prisma.space.updateMany({ where: { cabinId }, data: { cabinId: null } }),
+    ...(seatIds.length ? [prisma.space.updateMany({ where: { seatId: { in: seatIds } }, data: { seatId: null } })] : []),
+    prisma.seat.deleteMany({ where: { cabinId } }),
+    prisma.cabin.delete({ where: { id: cabinId } }),
+  ]);
+  return NextResponse.json({ ok: true });
+}

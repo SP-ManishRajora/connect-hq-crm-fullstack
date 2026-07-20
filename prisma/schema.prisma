@@ -32,6 +32,13 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // Patch v4 — per-user module override + user transfer audit
+  allowedModules  String?   // JSON array of module names; null = role defaults
+  transferredToId String?
+  transferredTo   User?     @relation("UserTransferTo", fields: [transferredToId], references: [id])
+  transferredFrom User[]    @relation("UserTransferTo")
+  transferredAt   DateTime?
+
   leadsOwned        Lead[]        @relation("LeadOwner")
   proposalsCreated  Proposal[]    @relation("ProposalCreator")
   proposalsApproved Proposal[]    @relation("ProposalApprover")
@@ -54,6 +61,13 @@ model User {
   reservationsMade  Reservation[]
 
   passwordResets    ClientInvite[] @relation("UserResets")
+
+  // Patch v4 — invites, password-reset requests, user transfers
+  invitesIssued      UserInvite[]            @relation("InvitedBy")
+  pwdResetRequests   PasswordResetRequest[]
+  transfersFrom      UserTransfer[]          @relation("TransferFrom")
+  transfersTo        UserTransfer[]          @relation("TransferTo")
+  transfersDecided   UserTransfer[]          @relation("TransferredBy")
 }
 
 // ============= CENTERS =============
@@ -905,4 +919,59 @@ model Review {
 
   @@index([status, createdAt])
   @@index([isVisitor])
+}
+
+// ============= PATCH v4: INVITES, PASSWORD RESETS, USER TRANSFERS =============
+
+// Admin-issued invite to onboard a new user with an optional per-user module override.
+model UserInvite {
+  id             String    @id @default(cuid())
+  token          String    @unique
+  email          String    @unique
+  name           String
+  role           String
+  centerId       String?
+  allowedModules String?   // JSON array of module names; null = default for role
+  invitedById    String
+  invitedBy      User      @relation("InvitedBy", fields: [invitedById], references: [id])
+  status         String    @default("PENDING")  // PENDING | ACCEPTED | EXPIRED | CANCELLED
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdUserId  String?
+  createdAt      DateTime  @default(now())
+
+  @@index([status])
+}
+
+// Password reset requiring admin approval; one-time token is minted on approval.
+model PasswordResetRequest {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  reason       String?
+  token        String?   @unique
+  expiresAt    DateTime?
+  status       String    @default("PENDING")  // PENDING | APPROVED | REJECTED | USED | EXPIRED
+  decidedById  String?
+  decidedAt    DateTime?
+  remarks      String?
+  createdAt    DateTime  @default(now())
+
+  @@index([status])
+}
+
+// Audit record of reassigning one user's open work to another (on leave / left org).
+model UserTransfer {
+  id                  String   @id @default(cuid())
+  fromUserId          String
+  fromUser            User     @relation("TransferFrom", fields: [fromUserId], references: [id])
+  toUserId            String
+  toUser              User     @relation("TransferTo", fields: [toUserId], references: [id])
+  reason              String?
+  recordsAffectedJson String?  @db.Text
+  transferredById     String
+  transferredBy       User     @relation("TransferredBy", fields: [transferredById], references: [id])
+  createdAt           DateTime @default(now())
+
+  @@index([fromUserId])
 }

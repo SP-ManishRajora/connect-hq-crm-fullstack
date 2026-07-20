@@ -9,10 +9,15 @@ const PUBLIC_PATHS = [
   "/register",
   "/forgot-password",
   "/reset-password",
+  "/invite",              // patch v4 — public invite accept page
+  "/reset",               // patch v4 — public password-reset page
   "/api/auth/login",
   "/api/auth/register",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  "/api/auth/request-reset",       // patch v4 — public reset request
+  "/api/invites",                  // patch v4 — public invite verify/accept (token subpaths)
+  "/api/password-resets/use",      // patch v4 — public token-based password set
   "/api/leads/public",
 ];
 

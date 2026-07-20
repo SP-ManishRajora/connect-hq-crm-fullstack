@@ -13,6 +13,8 @@ export type SessionUser = {
   name: string;
   role: string;
   centerId?: string | null;
+  // Patch v4 — per-user module override (JSON string of module names, or null for role defaults)
+  allowedModules?: string | null;
 };
 
 export async function hashPassword(p: string) {
@@ -53,6 +55,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       name: payload.name as string,
       role: payload.role as string,
       centerId: (payload.centerId as string) || null,
+      allowedModules: (payload.allowedModules as string) ?? null,
     };
   } catch {
     return null;
@@ -68,6 +71,7 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
       name: payload.name as string,
       role: payload.role as string,
       centerId: (payload.centerId as string) || null,
+      allowedModules: (payload.allowedModules as string) ?? null,
     };
   } catch {
     return null;
@@ -85,6 +89,7 @@ export async function loginByEmail(email: string, password: string) {
     name: user.name,
     role: user.role,
     centerId: user.centerId,
+    allowedModules: user.allowedModules ?? null,
   };
   await createSession(session);
   return session;

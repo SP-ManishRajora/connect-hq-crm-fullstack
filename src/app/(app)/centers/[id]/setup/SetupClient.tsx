@@ -133,6 +133,18 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
     if (r.ok) { setEditCab(null); router.refresh(); }
     else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to update cabin"); }
   }
+  const [deletingCab, setDeletingCab] = useState<string | null>(null);
+  async function deleteCabin(c: any) {
+    if (!confirm(`Delete cabin "${c.name}"? Its ${c.seats.length} seat(s) will be removed too. This cannot be undone.`)) return;
+    setDeletingCab(c.id);
+    const r = await fetch(`/api/centers/${center.id}/cabins`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cabinId: c.id }),
+    });
+    setDeletingCab(null);
+    if (r.ok) { if (editCab?.id === c.id) setEditCab(null); router.refresh(); }
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to delete cabin"); }
+  }
   async function addCabin(e: React.FormEvent) {
     e.preventDefault();
     // Qty = seats in this cabin → create ONE cabin whose capacity is that seat count.
@@ -429,6 +441,14 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
                         {savingCab ? "Saving…" : "Save"}
                       </button>
                       <button type="button" className="btn-ghost text-sm" onClick={() => setEditCab(null)}>Cancel</button>
+                      <button
+                        type="button"
+                        className="btn-ghost text-sm text-rose-600 hover:text-rose-700 ml-auto disabled:opacity-50"
+                        disabled={deletingCab === c.id}
+                        onClick={() => deleteCabin(c)}
+                      >
+                        {deletingCab === c.id ? "Deleting…" : "Delete cabin"}
+                      </button>
                     </div>
                   </div>
                 );
@@ -446,6 +466,14 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
                       <button type="button" className="btn-ghost text-xs" onClick={() => startEditCabin(c)}>Edit</button>
                       <button type="button" className="btn-ghost text-xs" onClick={() => setCabinDetailsId(isOpen ? null : c.id)}>
                         {isOpen ? "Hide" : "Details"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost text-xs text-rose-600 hover:text-rose-700 disabled:opacity-50"
+                        disabled={deletingCab === c.id}
+                        onClick={() => deleteCabin(c)}
+                      >
+                        {deletingCab === c.id ? "Deleting…" : "Delete"}
                       </button>
                     </div>
                   </div>

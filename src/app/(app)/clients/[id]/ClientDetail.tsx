@@ -4,12 +4,38 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtDate, fmtINR } from "@/lib/utils";
 
-export default function ClientDetail({ client, pendingInvites = [] }: any) {
+export default function ClientDetail({ client, pendingInvites = [], role = null }: any) {
   const router = useRouter();
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [emp, setEmp] = useState<any>({ name: "", email: "", phone: "", aadhaar: "", pan: "", designation: "", password: "" });
   const [occ, setOcc] = useState<number>(client.occupiedSeats || 0);
   const [picUserId, setPicUserId] = useState<string>(client.picUserId || "");
+
+  // Onboarding (contract start) date editing — ADMIN and CENTER_MANAGER only.
+  const canEditStart = role === "ADMIN" || role === "CENTER_MANAGER";
+  const isoDate = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : "");
+  const [editStart, setEditStart] = useState(false);
+  const [startDate, setStartDate] = useState<string>(isoDate(client.contract?.startDate));
+  const [savingStart, setSavingStart] = useState(false);
+
+  async function saveStartDate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!startDate) return;
+    setSavingStart(true);
+    const r = await fetch(`/api/clients/${client.id}/start-date`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ startDate }),
+    });
+    setSavingStart(false);
+    if (r.ok) {
+      setEditStart(false);
+      router.refresh();
+    } else {
+      const d = await r.json().catch(() => ({}));
+      alert(d?.error || "Failed to update start date");
+    }
+  }
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [showInvite, setShowInvite] = useState(false);
@@ -129,7 +155,35 @@ export default function ClientDetail({ client, pendingInvites = [] }: any) {
           <h2 className="h2">Contract</h2>
           {client.contract ? (
             <div className="text-sm">
-              <div>Start: {fmtDate(client.contract.startDate)}</div>
+              <div className="flex items-center gap-2">
+                <span>Start: {fmtDate(client.contract.startDate)}</span>
+                {canEditStart && !editStart && (
+                  <button
+                    type="button"
+                    className="text-brand-600 text-xs hover:underline"
+                    onClick={() => { setStartDate(isoDate(client.contract.startDate)); setEditStart(true); }}
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+              {canEditStart && editStart && (
+                <form onSubmit={saveStartDate} className="flex items-center gap-2 mt-1">
+                  <input
+                    className="input"
+                    type="date"
+                    required
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                  <button type="submit" className="btn-primary text-xs px-2 py-1" disabled={savingStart}>
+                    {savingStart ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" className="btn-ghost text-xs px-2 py-1" onClick={() => setEditStart(false)}>
+                    Cancel
+                  </button>
+                </form>
+              )}
               <div>Monthly Rent: {fmtINR(client.contract.monthlyRent)}</div>
               <div>Increment: {client.contract.incrementPct}%</div>
               <div>Next revision: {fmtDate(client.contract.revisionDate)}</div>

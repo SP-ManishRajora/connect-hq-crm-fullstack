@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
+import { getSessionUser } from "@/lib/auth";
 import ClientDetail from "./ClientDetail";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,8 @@ export default async function Page({ params }: { params: { id: string } }) {
   });
   if (!c) return notFound();
 
+  const me = await getSessionUser();
+
   // Pending (unused, unexpired) portal invites for the resend/revoke panel.
   const invites = await prisma.clientInvite.findMany({
     where: { employerClientId: params.id, type: "INVITE", usedAt: null, expiresAt: { gt: new Date() } },
@@ -29,6 +32,7 @@ export default async function Page({ params }: { params: { id: string } }) {
     <ClientDetail
       client={JSON.parse(JSON.stringify(c))}
       pendingInvites={JSON.parse(JSON.stringify(invites))}
+      role={me?.role ?? null}
     />
   );
 }
