@@ -120,15 +120,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const oldCap = cabin.seats.length;
 
     if (newCap > oldCap) {
-      // Grow: check center seat budget before adding.
-      const center = await prisma.center.findUnique({ where: { id: params.id }, include: { _count: { select: { seats: true } } } });
+      // Grow. Over-capacity is allowed here, same as POST: a center can hold more placed
+      // seats than its nominal totalSeats (the UI's "seats left" simply goes negative).
+      // The client warns before sending; the server does not block.
+      const center = await prisma.center.findUnique({ where: { id: params.id } });
       if (!center) return NextResponse.json({ error: "Center not found" }, { status: 404 });
       const adding = newCap - oldCap;
-      if (center._count.seats + adding > center.totalSeats) {
-        return NextResponse.json({ error: `Adding ${adding} seats would exceed the center's totalSeats (${center.totalSeats}).` }, { status: 400 });
-      }
-      // Continue seat numbering after the current center-wide seat count.
-      let counter = center._count.seats + 1;
+      // Number from the highest existing S-number, not the seat count: shrinks and cabin
+      // deletes leave gaps, and [centerId, number] is unique — counting would collide.
+      const existing = await prisma.seat.findMany({ where: { centerId: params.id }, select: { number: true } });
+      let counter = existing.reduce((max, s) => {
+        const n = /^S(\d+)$/.exec(s.number);
+        return n ? Math.max(max, Number(n[1])) : max;
+      }, 0) + 1;
       for (let i = 0; i < adding; i++) {
         await prisma.seat.create({ data: { centerId: params.id, cabinId, number: `S${counter++}`, zone: b.name ? String(b.name) : cabin.name } });
       }
@@ -148,6 +152,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const updated = await prisma.cabin.update({ where: { id: cabinId }, data });
+  // Keep seat.zone aligned with the cabin name, or a rename leaves existing seats
+  // labelled with the old zone while newly-grown ones use the new one.
+  if (data.name && data.name !== cabin.name) {
+    await prisma.seat.updateMany({ where: { cabinId }, data: { zone: String(data.name) } });
+  }
   return NextResponse.json(updated);
 }
 

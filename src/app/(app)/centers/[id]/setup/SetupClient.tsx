@@ -112,6 +112,7 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
       id: c.id,
       name: c.name || "",
       capacity: c.seats.length,
+      initialCapacity: c.seats.length, // baseline, so a rename-only save omits `capacity`
       floorId: c.floorId || "",
       notes: c.notes || "",
       photos: c.photos ? JSON.parse(c.photos) : [],
@@ -122,12 +123,30 @@ export default function SetupClient({ center, cabins, openSeats, inventory, clie
     if (!editCab) return;
     if (!editCab.name.trim()) { alert("Cabin name cannot be empty."); return; }
     setSavingCab(true);
+    // Only send `capacity` when it actually changed — the API reconciles seats on any
+    // capacity key present, so sending the unchanged value can trip the seat-budget check
+    // on a rename-only edit.
+    const body: Record<string, unknown> = {
+      cabinId: editCab.id, name: editCab.name.trim(),
+      floorId: editCab.floorId || null, notes: editCab.notes, photos: editCab.photos,
+    };
+    const newCap = Number(editCab.capacity);
+    if (newCap !== editCab.initialCapacity) {
+      body.capacity = newCap;
+      // Over-capacity is allowed — warn, don't block.
+      const adding = newCap - editCab.initialCapacity;
+      if (adding > 0 && placedSeats + adding > center.totalSeats) {
+        const over = placedSeats + adding - center.totalSeats;
+        const ok = confirm(
+          `This adds ${adding} seat(s), putting the center at ${placedSeats + adding} placed seats — ` +
+          `${over} over its total of ${center.totalSeats}.\n\nContinue?`
+        );
+        if (!ok) return;
+      }
+    }
     const r = await fetch(`/api/centers/${center.id}/cabins`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        cabinId: editCab.id, name: editCab.name.trim(), capacity: Number(editCab.capacity),
-        floorId: editCab.floorId || null, notes: editCab.notes, photos: editCab.photos,
-      }),
+      body: JSON.stringify(body),
     });
     setSavingCab(false);
     if (r.ok) { setEditCab(null); router.refresh(); }

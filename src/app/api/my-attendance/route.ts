@@ -8,11 +8,25 @@ function startOfToday() {
   return d;
 }
 
+// Browser geolocation is best-effort: it needs HTTPS in production and the user can
+// deny it outright. Coords are recorded when supplied and simply omitted otherwise —
+// a missing fix must never block someone from marking attendance.
+function readCoords(b: any) {
+  const lat = Number(b?.lat);
+  const lng = Number(b?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  const acc = Number(b?.accuracy);
+  return { lat, lng, accM: Number.isFinite(acc) && acc >= 0 ? acc : null };
+}
+
 export async function POST(req: NextRequest) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
-    const { action } = await req.json();
+    const body = await req.json();
+    const { action } = body;
+    const coords = readCoords(body);
     const today = startOfToday();
     const now = new Date();
 
@@ -28,6 +42,9 @@ export async function POST(req: NextRequest) {
           userId: me.id,
           date: today,
           checkInAt: now,
+          checkInLat: coords?.lat ?? null,
+          checkInLng: coords?.lng ?? null,
+          checkInAccM: coords?.accM ?? null,
           centerId: me.centerId || null,
         },
       });
@@ -46,7 +63,12 @@ export async function POST(req: NextRequest) {
       }
       const row = await prisma.staffAttendance.update({
         where: { id: existing.id },
-        data: { checkOutAt: now },
+        data: {
+          checkOutAt: now,
+          checkOutLat: coords?.lat ?? null,
+          checkOutLng: coords?.lng ?? null,
+          checkOutAccM: coords?.accM ?? null,
+        },
       });
       return NextResponse.json(row);
     }

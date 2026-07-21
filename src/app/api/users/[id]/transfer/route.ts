@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
+import { LEAD_LOST } from "@/lib/leadStatus";
 
 // POST  body: { toUserId: string, reason?: string, deactivate?: boolean }
 // Reassigns "in-flight" work owned by user [id] to toUserId. Logs to UserTransfer.
@@ -18,9 +19,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!from || !to) return NextResponse.json({ error: "User not found" }, { status: 404 });
   if (!to.active) return NextResponse.json({ error: "Target user is inactive" }, { status: 400 });
 
-  // Reassign open leads (not WON / LOST)
+  // Reassign open leads — i.e. anything not closed out. Lead.status is a free-form
+  // String using the vocabulary in @/lib/leadStatus ("Lead", "Connect", … "Lost"),
+  // NOT the uppercase WON/LOST this route originally assumed. "WON" is included
+  // because src/app/api/proposals/[id]/accept writes that value on acceptance.
+  const CLOSED_LEAD_STATUSES = [LEAD_LOST, "WON"];
   const leadsRes = await prisma.lead.updateMany({
-    where: { ownerId: from.id, status: { notIn: ["WON", "LOST"] } },
+    where: { ownerId: from.id, status: { notIn: CLOSED_LEAD_STATUSES } },
     data: { ownerId: to.id },
   });
 

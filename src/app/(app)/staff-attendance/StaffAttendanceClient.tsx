@@ -23,6 +23,27 @@ function hoursBetween(a: string | null | undefined, b: string | null | undefined
   return (new Date(b).getTime() - new Date(a).getTime()) / (1000 * 60 * 60);
 }
 
+// Time plus, when GPS was captured, a map link and the accuracy radius.
+function TimeWithGps({ at, lat, lng, accM }: { at: string | null | undefined; lat: number | null; lng: number | null; accM: number | null }) {
+  if (!at) return <>—</>;
+  const time = fmtTime(at);
+  if (lat == null || lng == null) return <>{time}</>;
+  return (
+    <div>
+      <div>{time}</div>
+      <a
+        className="text-xs text-brand-600 hover:underline"
+        href={`https://www.google.com/maps?q=${lat},${lng}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`${lat.toFixed(5)}, ${lng.toFixed(5)}`}
+      >
+        📍 map{accM != null ? ` ±${Math.round(accM)}m` : ""}
+      </a>
+    </div>
+  );
+}
+
 export default function StaffAttendanceClient({ users, records, centers, selectedDate, selectedCenterId }: any) {
   const router = useRouter();
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -105,8 +126,8 @@ export default function StaffAttendanceClient({ users, records, centers, selecte
                   <td className="font-medium">{u.name}<div className="text-xs text-gray-500">{u.email}</div></td>
                   <td className="text-xs">{u.role}</td>
                   <td>{u.center?.name || "—"}</td>
-                  <td>{fmtTime(r?.checkInAt)}</td>
-                  <td>{fmtTime(r?.checkOutAt)}</td>
+                  <td><TimeWithGps at={r?.checkInAt} lat={r?.checkInLat ?? null} lng={r?.checkInLng ?? null} accM={r?.checkInAccM ?? null} /></td>
+                  <td><TimeWithGps at={r?.checkOutAt} lat={r?.checkOutLat ?? null} lng={r?.checkOutLng ?? null} accM={r?.checkOutAccM ?? null} /></td>
                   <td>{hrs !== null ? hrs.toFixed(2) : "—"}</td>
                   <td>
                     <div className="flex items-center gap-2">

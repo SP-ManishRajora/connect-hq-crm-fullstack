@@ -645,7 +645,13 @@ model StaffAttendance {
   user        User      @relation(fields: [userId], references: [id])
   date        DateTime  // midnight (server local) of the day
   checkInAt   DateTime?
+  checkInLat  Float?
+  checkInLng  Float?
+  checkInAccM Float?    // GPS accuracy, metres
   checkOutAt  DateTime?
+  checkOutLat Float?
+  checkOutLng Float?
+  checkOutAccM Float?   // GPS accuracy, metres
   centerId    String?
   center      Center?   @relation(fields: [centerId], references: [id])
   status      String    @default("PRESENT") // PRESENT | LATE | HALF_DAY | LEAVE | HOLIDAY | ABSENT
