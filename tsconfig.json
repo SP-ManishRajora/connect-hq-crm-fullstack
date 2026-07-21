@@ -37,6 +37,6 @@
   ],
   "exclude": [
     "node_modules",
-    "coworking-erp-patch-v4"
+    "coworking-erp-patch-*"
   ]
 }
