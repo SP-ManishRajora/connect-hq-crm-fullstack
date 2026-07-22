@@ -1,8 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const CATS = ["TEA_COFFEE", "HOUSEKEEPING", "INTERNET", "FURNITURE", "ELECTRICAL", "PLUMBING", "OTHER"];
+const DEFAULT_CATS = ["TEA_COFFEE", "HOUSEKEEPING", "INTERNET", "FURNITURE", "ELECTRICAL", "PLUMBING", "OTHER"];
+
+// Normalise a free-text category to a stable key (uppercase, spaces/dashes → underscore).
+const normCat = (s: string) => s.trim().toUpperCase().replace(/[\s-]+/g, "_").replace(/[^A-Z0-9_]/g, "");
 
 const EMPTY_FORM = { name: "", category: "OTHER", contact: "", email: "", phone: "", gstin: "", panNumber: "", bankDetails: "", rateCardJson: "" };
 
@@ -12,6 +15,40 @@ export default function VendorsClient({ initial, role }: any) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<any>(EMPTY_FORM);
   const isAdminOrOwner = role === "ADMIN" || role === "OWNER";
+
+  // Categories added inline this session (persist once a vendor using them is saved).
+  const [sessionCats, setSessionCats] = useState<string[]>([]);
+
+  // Searchable combobox state for the category field.
+  const [catOpen, setCatOpen] = useState(false);
+  const [catQuery, setCatQuery] = useState("");
+
+  // Full category list = defaults ∪ categories already used by vendors ∪ session additions.
+  const categories = useMemo(() => {
+    const set = new Set<string>(DEFAULT_CATS);
+    for (const v of initial) if (v.category) set.add(String(v.category));
+    for (const c of sessionCats) set.add(c);
+    return Array.from(set);
+  }, [initial, sessionCats]);
+
+  // Categories matching the current search text.
+  const q = catQuery.trim().toUpperCase();
+  const matches = q ? categories.filter((c) => c.toUpperCase().includes(q)) : categories;
+  // Whether the typed value would be a brand-new category (not an exact match of any existing).
+  const typedKey = normCat(catQuery);
+  const isNewCat = typedKey.length > 0 && !categories.some((c) => c.toUpperCase() === typedKey);
+
+  function chooseCategory(cat: string) {
+    setForm((f: any) => ({ ...f, category: cat }));
+    setCatOpen(false);
+    setCatQuery("");
+  }
+
+  function addTypedCategory() {
+    if (!isNewCat) return;
+    setSessionCats((prev) => [...prev, typedKey]);
+    chooseCategory(typedKey);
+  }
 
   function startEdit(v: any) {
     setEditingId(v.id);
@@ -33,6 +70,8 @@ export default function VendorsClient({ initial, role }: any) {
     setShow(false);
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setCatOpen(false);
+    setCatQuery("");
   }
 
   async function submit(e: React.FormEvent) {
@@ -70,10 +109,49 @@ export default function VendorsClient({ initial, role }: any) {
         <form onSubmit={submit} className="card grid sm:grid-cols-2 gap-3">
           <h2 className="h2 sm:col-span-2">{editingId ? "Edit Vendor" : "Vendor Onboarding Form"}</h2>
           <div><label className="label">Vendor Name *</label><input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          <div><label className="label">Category *</label>
-            <select className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              {CATS.map((c) => <option key={c}>{c}</option>)}
-            </select>
+          <div className="relative"><label className="label">Category *</label>
+            <input
+              className="input"
+              title="Category"
+              placeholder="Search or add category…"
+              value={catOpen ? catQuery : form.category}
+              onFocus={() => { setCatOpen(true); setCatQuery(""); }}
+              onChange={(e) => { setCatQuery(e.target.value); setCatOpen(true); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); if (matches.length > 0) chooseCategory(matches[0]); else if (isNewCat) addTypedCategory(); }
+                if (e.key === "Escape") { setCatOpen(false); setCatQuery(""); }
+              }}
+              // Delay close so a click on an option registers first.
+              onBlur={() => setTimeout(() => setCatOpen(false), 150)}
+            />
+            {catOpen && (
+              <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-lg border bg-white shadow-lg">
+                {matches.map((c) => (
+                  <button
+                    type="button"
+                    key={c}
+                    className={`block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 ${c === form.category ? "font-medium text-brand-700" : ""}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => chooseCategory(c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+                {matches.length === 0 && !isNewCat && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No categories</div>
+                )}
+                {isNewCat && (
+                  <button
+                    type="button"
+                    className="block w-full text-left px-3 py-2 text-sm border-t bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={addTypedCategory}
+                  >
+                    + Add new category “<code>{typedKey}</code>”
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div><label className="label">Contact Person</label><input className="input" value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} /></div>
           <div><label className="label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>

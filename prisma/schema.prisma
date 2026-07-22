@@ -183,6 +183,7 @@ model PartnerContact {
   updatedAt     DateTime @updatedAt
 
   leads         Lead[]
+  clients       Client[] @relation("ClientPartnerContact")
 }
 
 model Comment {
@@ -289,6 +290,12 @@ model Client {
   unusedSeatLastReminderAt DateTime?
   picUserId         String?                  // Person In Charge (User.id)
   pic               User?     @relation("ClientPIC", fields: [picUserId], references: [id])
+
+  // Channel partner this client came through (Broker / Agent / IPC) — mirrors Lead.
+  sourceType        String?         // "Broker" | "Agent" | "IPC"
+  partnerContactId  String?
+  partnerContact    PartnerContact? @relation("ClientPartnerContact", fields: [partnerContactId], references: [id])
+
   createdAt         DateTime  @default(now())
 
   contract          Contract?

@@ -15,11 +15,17 @@ export default async function Page({ params }: { params: { id: string } }) {
       proposal: true,
       employees: true,
       pic: true,
+      partnerContact: { include: { partner: true } },
     },
   });
   if (!c) return notFound();
 
   const me = await getSessionUser();
+
+  const partners = await prisma.partner.findMany({
+    orderBy: { organisation: "asc" },
+    include: { contacts: { orderBy: { name: "asc" } } },
+  });
 
   // Pending (unused, unexpired) portal invites for the resend/revoke panel.
   const invites = await prisma.clientInvite.findMany({
@@ -32,6 +38,7 @@ export default async function Page({ params }: { params: { id: string } }) {
     <ClientDetail
       client={JSON.parse(JSON.stringify(c))}
       pendingInvites={JSON.parse(JSON.stringify(invites))}
+      partners={JSON.parse(JSON.stringify(partners))}
       role={me?.role ?? null}
     />
   );

@@ -40,6 +40,20 @@ export async function POST(req: NextRequest) {
     cabinCapacity = cabin.capacity;
   }
 
+  // Channel partner (optional): where the client came from. Mirror the lead flow.
+  const sourceType = b.sourceType ? String(b.sourceType).trim() : null;
+  const partnerContactId = b.partnerContactId ? String(b.partnerContactId).trim() : null;
+  if (partnerContactId) {
+    const contact = await prisma.partnerContact.findUnique({
+      where: { id: partnerContactId },
+      select: { partner: { select: { type: true } } },
+    });
+    if (!contact) return NextResponse.json({ error: "Partner contact not found" }, { status: 400 });
+    if (sourceType && contact.partner.type !== sourceType) {
+      return NextResponse.json({ error: "Partner contact does not match the selected source type" }, { status: 400 });
+    }
+  }
+
   const start = b.startDate ? new Date(b.startDate) : new Date();
   if (Number.isNaN(start.getTime())) return NextResponse.json({ error: "Invalid start date" }, { status: 400 });
   const revisionDate = new Date(start);
@@ -64,6 +78,8 @@ export async function POST(req: NextRequest) {
       // no proposalId — this is a direct onboarding
       startDate: start,
       specialAgreement: b.specialAgreement ? String(b.specialAgreement) : null,
+      sourceType,
+      partnerContactId,
       occupiedSeats: occ,
       totalCabinSeats: total,
       contract: {

@@ -3,6 +3,27 @@ import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtINR, fmtDate, fmtDateTime } from "@/lib/utils";
 
+// Referrer categories. CLIENT is special (links to an existing client record);
+// every other type uses the free-text referrer name field.
+const REFERRER_TYPES: { value: string; label: string }[] = [
+  { value: "CLIENT", label: "Existing Client" },
+  { value: "BROKER", label: "Broker" },
+  { value: "AGENT", label: "Agent / Channel Partner" },
+  { value: "IPC", label: "IPC (International Property Consultant)" },
+  { value: "EMPLOYEE", label: "Employee (internal)" },
+  { value: "PARTNER", label: "Business Partner" },
+  { value: "VENDOR", label: "Vendor / Supplier" },
+  { value: "EX_CLIENT", label: "Former Client" },
+  { value: "WALK_IN", label: "Walk-in" },
+  { value: "WEBSITE", label: "Website / Inbound" },
+  { value: "SOCIAL_MEDIA", label: "Social Media" },
+  { value: "EVENT", label: "Event / Expo" },
+  { value: "OTHER", label: "Other" },
+];
+
+const TYPE_LABEL: Record<string, string> = Object.fromEntries(REFERRER_TYPES.map((t) => [t.value, t.label]));
+const typeLabel = (v: string) => TYPE_LABEL[v] || v;
+
 const EMPTY = { referrerType: "CLIENT", referrerId: "", referrerName: "", contact: "", prospectName: "", prospectPhone: "", feeAmount: 0, notes: "" };
 
 export default function ReferralsClient({ initial, clients, canManage }: any) {
@@ -76,7 +97,7 @@ export default function ReferralsClient({ initial, clients, canManage }: any) {
           <div className="sm:col-span-2 font-medium">{editingId ? "Edit Referral" : "New Referral"}</div>
           <div><label className="label">Referrer Type *</label>
             <select className="input" title="Referrer Type" value={r.referrerType} onChange={(e) => setR({ ...r, referrerType: e.target.value })}>
-              <option>CLIENT</option><option>BROKER</option>
+              {REFERRER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
           {r.referrerType === "CLIENT" ? (
@@ -87,7 +108,7 @@ export default function ReferralsClient({ initial, clients, canManage }: any) {
               </select>
             </div>
           ) : (
-            <div><label className="label">Broker Name *</label><input className="input" title="Broker Name" placeholder="Broker Name" required value={r.referrerName} onChange={(e) => setR({ ...r, referrerName: e.target.value })} /></div>
+            <div><label className="label">Referrer Name *</label><input className="input" title="Referrer Name" placeholder="Referrer Name" required value={r.referrerName} onChange={(e) => setR({ ...r, referrerName: e.target.value })} /></div>
           )}
           <div><label className="label">Referrer Contact</label><input className="input" title="Referrer Contact" placeholder="Referrer Contact" value={r.contact} onChange={(e) => setR({ ...r, contact: e.target.value })} /></div>
           <div><label className="label">Prospect Name *</label><input className="input" title="Prospect Name" placeholder="Prospect Name" required value={r.prospectName} onChange={(e) => setR({ ...r, prospectName: e.target.value })} /></div>
@@ -107,7 +128,7 @@ export default function ReferralsClient({ initial, clients, canManage }: any) {
               <tr>
                 <td>{fmtDate(x.createdAt)}</td>
                 <td>{x.referrerName}<div className="text-xs text-gray-500">{x.contact}</div></td>
-                <td>{x.referrerType}</td>
+                <td>{typeLabel(x.referrerType)}</td>
                 <td>{x.prospectName}<div className="text-xs text-gray-500">{x.prospectPhone}</div></td>
                 <td>{x.converted ? "✅" : "—"}</td>
                 <td>{fmtINR(x.feeAmount)}</td>
@@ -127,7 +148,7 @@ export default function ReferralsClient({ initial, clients, canManage }: any) {
                 <tr>
                   <td colSpan={8} className="bg-gray-50">
                     <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 p-2 text-sm">
-                      <div><span className="muted">Referrer:</span> {x.referrerName} ({x.referrerType})</div>
+                      <div><span className="muted">Referrer:</span> {x.referrerName} ({typeLabel(x.referrerType)})</div>
                       <div><span className="muted">Referrer contact:</span> {x.contact || "—"}</div>
                       <div><span className="muted">Prospect:</span> {x.prospectName}</div>
                       <div><span className="muted">Prospect phone:</span> {x.prospectPhone || "—"}</div>

@@ -7,50 +7,64 @@ import { canAccess } from "@/lib/rbac";
 type SessionUser = { id: string; name: string; email: string; role: string; centerId?: string | null; allowedModules?: string[] | null };
 
 const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: string; icon: string }[] }[] = [
-  { title: "Workspace", items: [
-    { mod: "dashboard", href: "/dashboard", label: "Dashboard", icon: "🏠" },
-    { mod: "occupancy", href: "/occupancy", label: "Occupancy", icon: "🪑" },
-    { mod: "centers", href: "/centers", label: "Centers", icon: "🏢" },
-  ]},
-  { title: "Sales", items: [
-    { mod: "leads", href: "/leads", label: "CRM / Leads", icon: "📞" },
-    { mod: "visitors", href: "/visitors", label: "Visitors / KYC", icon: "👤" },
-    { mod: "proposals", href: "/proposals", label: "Proposals", icon: "📄" },
-    { mod: "clients", href: "/clients", label: "Clients", icon: "🤝" },
-    { mod: "contracts", href: "/contracts", label: "Contracts", icon: "📑" },
-    { mod: "contracts_inbox", href: "/contracts-inbox", label: "Contracts Inbox", icon: "📨" },
-    { mod: "referrals", href: "/referrals", label: "Referrals", icon: "🎁" },
-  ]},
-  { title: "Operations", items: [
-    { mod: "vendors", href: "/vendors", label: "Vendors", icon: "🚚" },
-    { mod: "procurement", href: "/procurement", label: "PR / PO", icon: "🧾" },
-    { mod: "vendor_invoices", href: "/vendor-invoices", label: "Vendor Invoices", icon: "📥" },
-    { mod: "recurring", href: "/recurring", label: "Recurring POs", icon: "🔁" },
-    { mod: "inventory", href: "/inventory", label: "Inventory & Assets", icon: "📦" },
-    { mod: "repairs", href: "/repairs", label: "Repairs", icon: "🔧" },
-    { mod: "attendance", href: "/attendance", label: "Center Daily Logs", icon: "✅" },
-    { mod: "bookings", href: "/bookings", label: "Meeting Rooms", icon: "📅" },
-  ]},
-  { title: "People", items: [
-    { mod: "my_attendance", href: "/my-attendance", label: "My Attendance", icon: "🕒" },
-    { mod: "staff_attendance", href: "/staff-attendance", label: "Staff Attendance", icon: "📍" },
-    { mod: "leave_management", href: "/leave-management", label: "Leave Management", icon: "🏖️" },
-  ]},
-  { title: "Finance", items: [
-    { mod: "invoices", href: "/invoices", label: "Client Invoices", icon: "💸" },
-    { mod: "accounts", href: "/accounts", label: "Accounts / Ledger", icon: "📊" },
-    { mod: "cashflow", href: "/accounts/cashflow", label: "Cashflow (Admin)", icon: "📈" },
-  ]},
-  { title: "Service", items: [
-    { mod: "tickets", href: "/tickets", label: "Tickets", icon: "🎫" },
-    { mod: "notices", href: "/notices", label: "Notice Board / Ads", icon: "📢" },
-    { mod: "reviews", href: "/reviews", label: "Reviews / Feedback", icon: "⭐" },
-    { mod: "sops", href: "/sops", label: "SOPs", icon: "📚" },
-  ]},
-  { title: "Admin", items: [
-    { mod: "users", href: "/users", label: "Users", icon: "👥" },
-    { mod: "audit_logs", href: "/audit-logs", label: "Audit Log", icon: "🔍" },
-  ]},
+  {
+    title: "Workspace", items: [
+      { mod: "dashboard", href: "/dashboard", label: "Dashboard", icon: "🏠" },
+      { mod: "occupancy", href: "/occupancy", label: "Occupancy", icon: "🪑" },
+      { mod: "centers", href: "/centers", label: "Centers", icon: "🏢" },
+    ]
+  },
+  {
+    title: "Sales", items: [
+      { mod: "leads", href: "/leads", label: "CRM / Leads", icon: "📞" },
+      { mod: "visitors", href: "/visitors", label: "Visitors / KYC", icon: "👤" },
+      { mod: "proposals", href: "/proposals", label: "Proposals", icon: "📄" },
+      { mod: "clients", href: "/clients", label: "Clients", icon: "🤝" },
+      { mod: "referrals", href: "/referrals", label: "Referrals", icon: "🎁" },
+    ]
+  },
+  {
+    title: "Operations", items: [
+      { mod: "vendors", href: "/vendors", label: "Vendors", icon: "🚚" },
+      { mod: "procurement", href: "/procurement", label: "PR / PO", icon: "🧾" },
+      { mod: "vendor_invoices", href: "/vendor-invoices", label: "Vendor Invoices", icon: "📥" },
+      { mod: "recurring", href: "/recurring", label: "Recurring POs", icon: "🔁" },
+      { mod: "inventory", href: "/inventory", label: "Inventory & Assets", icon: "📦" },
+      { mod: "repairs", href: "/repairs", label: "Repairs", icon: "🔧" },
+      { mod: "attendance", href: "/attendance", label: "Center Daily Logs", icon: "✅" },
+      { mod: "bookings", href: "/bookings", label: "Meeting Rooms", icon: "📅" },
+    ]
+  },
+  {
+    title: "People", items: [
+      { mod: "my_attendance", href: "/my-attendance", label: "My Attendance", icon: "🕒" },
+      { mod: "staff_attendance", href: "/staff-attendance", label: "Staff Attendance", icon: "📍" },
+      { mod: "leave_management", href: "/leave-management", label: "Leave Management", icon: "🏖️" },
+    ]
+  },
+  {
+    title: "Finance", items: [
+      { mod: "invoices", href: "/invoices", label: "Client Invoices", icon: "💸" },
+      { mod: "accounts", href: "/accounts", label: "Accounts / Ledger", icon: "📊" },
+      { mod: "cashflow", href: "/accounts/cashflow", label: "Cashflow (Admin)", icon: "📈" },
+      { mod: "contracts", href: "/contracts", label: "Contracts", icon: "📑" },
+      { mod: "contracts_inbox", href: "/contracts-inbox", label: "Contracts Inbox", icon: "📨" },
+    ]
+  },
+  {
+    title: "Service", items: [
+      { mod: "tickets", href: "/tickets", label: "Tickets", icon: "🎫" },
+      { mod: "notices", href: "/notices", label: "Notice Board / Ads", icon: "📢" },
+      { mod: "reviews", href: "/reviews", label: "Reviews / Feedback", icon: "⭐" },
+      { mod: "sops", href: "/sops", label: "SOPs", icon: "📚" },
+    ]
+  },
+  {
+    title: "Admin", items: [
+      { mod: "users", href: "/users", label: "Users", icon: "👥" },
+      { mod: "audit_logs", href: "/audit-logs", label: "Audit Log", icon: "🔍" },
+    ]
+  },
 ];
 
 export default function Shell({ user, children }: { user: SessionUser; children: React.ReactNode }) {

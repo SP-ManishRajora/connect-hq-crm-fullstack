@@ -3,8 +3,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtDate, fmtINR } from "@/lib/utils";
+import PartnerPicker from "@/components/PartnerPicker";
 
-export default function ClientsClient({ initial, acceptedProposals, centers = [], cabins = [] }: any) {
+export default function ClientsClient({ initial, acceptedProposals, centers = [], cabins = [], partners = [] }: any) {
   const router = useRouter();
 
   // Bulk import (Excel) state.
@@ -54,6 +55,7 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
     centerId: "", cabinId: "", startDate: "",
     monthlyRent: "", securityDeposit: "", incrementPct: 5,
     occupiedSeats: "", special: "",
+    sourceType: "", partnerContactId: "",
   });
   const cabinsForCenter = cabins.filter((c: any) => c.centerId === d.centerId);
 
@@ -85,6 +87,8 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
         monthlyRent: d.monthlyRent, securityDeposit: d.securityDeposit, incrementPct: d.incrementPct,
         occupiedSeats: d.occupiedSeats === "" ? undefined : Number(d.occupiedSeats),
         specialAgreement: d.special,
+        sourceType: d.sourceType || null,
+        partnerContactId: d.partnerContactId || null,
       }),
     });
     if (r.ok) {
@@ -131,6 +135,28 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
   }
   async function confirmCM(id: string) { await fetch(`/api/clients/${id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ side: "CM" }) }); router.refresh(); }
   async function confirmClient(id: string) { await fetch(`/api/clients/${id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ side: "CLIENT" }) }); router.refresh(); }
+
+  // ---- List filters ----
+  const [brokerFilter, setBrokerFilter] = useState<"all" | "broker" | "non-broker">("all");
+  const [centerFilter, setCenterFilter] = useState("");
+  const [seatsMin, setSeatsMin] = useState<string>("");
+  const [seatsMax, setSeatsMax] = useState<string>("");
+
+  const filtered = initial.filter((c: any) => {
+    // Broker / non-broker: a client "came from a broker" when sourceType is set (partner).
+    if (brokerFilter === "broker" && !c.sourceType) return false;
+    if (brokerFilter === "non-broker" && c.sourceType) return false;
+    // Center
+    if (centerFilter && c.centerId !== centerFilter) return false;
+    // Seats (occupied) range
+    const seats = c.occupiedSeats || 0;
+    if (seatsMin !== "" && seats < Number(seatsMin)) return false;
+    if (seatsMax !== "" && seats > Number(seatsMax)) return false;
+    return true;
+  });
+
+  const clearFilters = () => { setBrokerFilter("all"); setCenterFilter(""); setSeatsMin(""); setSeatsMax(""); };
+  const filtersActive = brokerFilter !== "all" || centerFilter !== "" || seatsMin !== "" || seatsMax !== "";
 
   return (
     <div className="space-y-4">
@@ -255,6 +281,16 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
             <div className="sm:col-span-2"><label className="label">Special agreement / requirements</label>
               <textarea className="input" rows={3} value={d.special} onChange={(e) => setD({ ...d, special: e.target.value })} />
             </div>
+
+            {/* Channel partner: where the client came from (Broker / Agent / IPC) */}
+            <div className="sm:col-span-2 border-t pt-3">
+              <PartnerPicker
+                partners={partners}
+                sourceType={d.sourceType}
+                partnerContactId={d.partnerContactId}
+                onChange={(next) => setD({ ...d, ...next })}
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => setShowDirect(false)}>Cancel</button>
@@ -303,11 +339,40 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
       )}
 
       <div className="card">
+        <div className="flex flex-wrap items-end gap-3 mb-3">
+          <div>
+            <label className="label">Source</label>
+            <select className="input" title="Source filter" value={brokerFilter} onChange={(e) => setBrokerFilter(e.target.value as any)}>
+              <option value="all">All</option>
+              <option value="broker">Via broker/partner</option>
+              <option value="non-broker">Direct (non-broker)</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Center</label>
+            <select className="input" title="Center filter" value={centerFilter} onChange={(e) => setCenterFilter(e.target.value)}>
+              <option value="">All centers</option>
+              {centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Seats (min)</label>
+            <input className="input w-24" type="number" min={0} title="Minimum occupied seats" value={seatsMin} onChange={(e) => setSeatsMin(e.target.value)} placeholder="0" />
+          </div>
+          <div>
+            <label className="label">Seats (max)</label>
+            <input className="input w-24" type="number" min={0} title="Maximum occupied seats" value={seatsMax} onChange={(e) => setSeatsMax(e.target.value)} placeholder="∞" />
+          </div>
+          <div className="text-sm text-gray-500 pb-2">
+            <span className="font-semibold text-gray-700">{filtered.length}</span> of {initial.length}
+            {filtersActive && <button type="button" className="ml-3 text-brand-600 hover:underline" onClick={clearFilters}>Clear</button>}
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Company</th><th>Contact</th><th>Center</th><th>Cabin</th><th>Occ/Total</th><th>Start</th><th>Sent Ops</th><th>CM ✓</th><th>Client ✓</th><th></th></tr></thead>
+            <thead><tr><th>Company</th><th>Contact</th><th>Center</th><th>Cabin</th><th>Occ/Total</th><th>Start</th><th>Lead came from</th><th>Broker — Organisation</th><th>Sent Ops</th><th>CM ✓</th><th>Client ✓</th><th></th></tr></thead>
             <tbody>
-              {initial.map((c: any) => (
+              {filtered.map((c: any) => (
                 <tr key={c.id}>
                   <td className="font-medium"><Link href={`/clients/${c.id}`} className="text-brand-700 hover:underline">{c.companyName}</Link></td>
                   <td>{c.contactName}<div className="text-xs text-gray-500">{c.email}</div></td>
@@ -315,13 +380,15 @@ export default function ClientsClient({ initial, acceptedProposals, centers = []
                   <td>{c.cabin?.name || "Open"}</td>
                   <td>{c.occupiedSeats || 0}/{c.totalCabinSeats || 0}</td>
                   <td>{fmtDate(c.startDate)}</td>
+                  <td>{c.sourceType ? <span className="badge bg-gray-100 text-gray-700">{c.sourceType}</span> : <span className="text-gray-400">Direct</span>}</td>
+                  <td>{c.partnerContact?.partner?.organisation || "—"}{c.partnerContact?.name ? <div className="text-xs text-gray-500">{c.partnerContact.name}</div> : null}</td>
                   <td>{c.sentToOps ? "✅" : <button className="btn-ghost text-xs" onClick={() => openSendMail(c)}>Send</button>}</td>
                   <td>{c.cmConfirmed ? "✅" : <button className="btn-ghost text-xs" onClick={() => confirmCM(c.id)}>CM</button>}</td>
                   <td>{c.clientConfirmed ? "✅" : <button className="btn-ghost text-xs" onClick={() => confirmClient(c.id)}>Client</button>}</td>
                   <td><Link href={`/clients/${c.id}`} className="text-brand-600 text-xs">Open →</Link></td>
                 </tr>
               ))}
-              {initial.length === 0 && <tr><td colSpan={10} className="text-center text-gray-400 py-8">No clients</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={12} className="text-center text-gray-400 py-8">{initial.length === 0 ? "No clients" : "No clients match the filters"}</td></tr>}
             </tbody>
           </table>
         </div>

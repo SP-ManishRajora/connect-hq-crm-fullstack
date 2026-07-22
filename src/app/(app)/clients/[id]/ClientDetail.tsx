@@ -3,9 +3,29 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtDate, fmtINR } from "@/lib/utils";
+import PartnerPicker from "@/components/PartnerPicker";
 
-export default function ClientDetail({ client, pendingInvites = [], role = null }: any) {
+export default function ClientDetail({ client, pendingInvites = [], partners = [], role = null }: any) {
   const router = useRouter();
+
+  // "Lead came from" (channel partner) editing.
+  const [source, setSource] = useState<{ sourceType: string; partnerContactId: string }>({
+    sourceType: client.sourceType || "",
+    partnerContactId: client.partnerContactId || "",
+  });
+  const [savingSource, setSavingSource] = useState(false);
+
+  async function saveSource() {
+    setSavingSource(true);
+    const r = await fetch(`/api/clients/${client.id}/source`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(source),
+    });
+    setSavingSource(false);
+    if (r.ok) router.refresh();
+    else { const j = await r.json().catch(() => ({})); alert(j.error || "Failed to update source"); }
+  }
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [emp, setEmp] = useState<any>({ name: "", email: "", phone: "", aadhaar: "", pan: "", designation: "", password: "" });
   const [occ, setOcc] = useState<number>(client.occupiedSeats || 0);
@@ -197,6 +217,22 @@ export default function ClientDetail({ client, pendingInvites = [], role = null 
             <label className="label">Upload existing contract (PDF/image — OCR will extract dates)</label>
             <input type="file" accept="application/pdf,image/*" onChange={uploadContract} />
           </div>
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="h2">Lead came from</h2>
+        <p className="muted text-xs">Channel partner this client came through (Broker / Agent / IPC). Leave as “Direct” if not via a partner.</p>
+        <PartnerPicker
+          partners={partners}
+          sourceType={source.sourceType}
+          partnerContactId={source.partnerContactId}
+          onChange={(next) => setSource(next)}
+        />
+        <div className="flex justify-end">
+          <button type="button" className="btn-primary text-xs disabled:opacity-50" disabled={savingSource} onClick={saveSource}>
+            {savingSource ? "Saving…" : "Save source"}
+          </button>
         </div>
       </div>
 

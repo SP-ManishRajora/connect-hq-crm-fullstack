@@ -4,9 +4,26 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fmtINR, fmtDate } from "@/lib/utils";
 
-export default function VendorInvoicesClient({ initial, vendors, pos }: any) {
+const STATUSES = ["PENDING", "APPROVED", "REJECTED", "BOOKED"];
+
+export default function VendorInvoicesClient({ initial, vendors, pos, centers = [] }: any) {
   const router = useRouter();
   const [show, setShow] = useState(false);
+
+  // ---- List filters ----
+  const [centerFilter, setCenterFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("");
+
+  const filtered = initial.filter((i: any) => {
+    if (centerFilter && i.po?.centerId !== centerFilter) return false;
+    if (statusFilter && i.status !== statusFilter) return false;
+    if (vendorFilter && i.vendorId !== vendorFilter) return false;
+    return true;
+  });
+
+  const filtersActive = centerFilter || statusFilter || vendorFilter;
+  const clearFilters = () => { setCenterFilter(""); setStatusFilter(""); setVendorFilter(""); };
   const [vendorId, setVendorId] = useState("");
   const [poId, setPoId] = useState("");
   const [path, setPath] = useState("");
@@ -77,14 +94,43 @@ export default function VendorInvoicesClient({ initial, vendors, pos }: any) {
         </form>
       )}
 
-      <div className="card overflow-x-auto">
+      <div className="card">
+        <div className="flex flex-wrap items-end gap-3 mb-3">
+          <div>
+            <label className="label">Center</label>
+            <select className="input" title="Center filter" value={centerFilter} onChange={(e) => setCenterFilter(e.target.value)}>
+              <option value="">All centers</option>
+              {centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Status</label>
+            <select className="input" title="Status filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All statuses</option>
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Vendor</label>
+            <select className="input" title="Vendor filter" value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)}>
+              <option value="">All vendors</option>
+              {vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+          <div className="text-sm text-gray-500 pb-2">
+            <span className="font-semibold text-gray-700">{filtered.length}</span> of {initial.length}
+            {filtersActive && <button type="button" className="ml-3 text-brand-600 hover:underline" onClick={clearFilters}>Clear</button>}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
         <table className="table">
-          <thead><tr><th>Date</th><th>Vendor</th><th>PO Match</th><th>Inv #</th><th>Amount</th><th>GST</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Vendor</th><th>Center</th><th>PO Match</th><th>Inv #</th><th>Amount</th><th>GST</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            {initial.map((i: any) => (
+            {filtered.map((i: any) => (
               <tr key={i.id}>
                 <td>{fmtDate(i.createdAt)}</td>
                 <td>{i.vendor.name}</td>
+                <td>{i.po?.center?.name || <span className="muted text-xs">—</span>}</td>
                 <td>{i.po ? (
                   <span className={`badge ${i.poMatchStatus === "MATCHED" ? "bg-emerald-100 text-emerald-700" : i.poMatchStatus === "MISMATCH" ? "bg-rose-100 text-rose-700" : "bg-gray-100 text-gray-700"}`}>{i.poMatchStatus}: {i.po.poNumber || i.po.id.slice(0, 8)}</span>
                 ) : <span className="muted text-xs">No PO</span>}</td>
@@ -103,9 +149,10 @@ export default function VendorInvoicesClient({ initial, vendors, pos }: any) {
                 </td>
               </tr>
             ))}
-            {initial.length === 0 && <tr><td colSpan={8} className="text-center text-gray-400 py-8">No vendor invoices uploaded yet</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={9} className="text-center text-gray-400 py-8">{initial.length === 0 ? "No vendor invoices uploaded yet" : "No invoices match the filters"}</td></tr>}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
