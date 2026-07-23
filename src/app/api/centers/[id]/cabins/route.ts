@@ -48,11 +48,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ created: created.length, cabins: created });
   }
 
-  const existingSeats = center.seats.length;
   // Over-capacity is allowed: a center can hold more placed seats than its nominal
   // totalSeats (the "seats left" figure in the UI simply goes negative).
 
-  let seatCounter = existingSeats + 1;
+  // Number from the highest existing S-number, not the seat count: cabin deletes and
+  // capacity shrinks leave gaps, and [centerId, number] is unique — a count-based
+  // start would collide with a still-existing seat and fail the insert.
+  let seatCounter = center.seats.reduce((max, s) => {
+    const n = /^S(\d+)$/.exec(s.number);
+    return n ? Math.max(max, Number(n[1])) : max;
+  }, 0) + 1;
   for (let i = 1; i <= qty; i++) {
     const cabin = await prisma.cabin.create({
       data: { centerId: params.id, floorId, name: `${name} ${i}`, capacity, photos: photosJson, notes },
