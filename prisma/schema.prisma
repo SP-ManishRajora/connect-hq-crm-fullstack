@@ -1,6 +1,11 @@
 // Prisma schema — Coworking ERP (PATCH v2: cabins, employee directory, vendor invoice OCR, blacklist, half-price seats)
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" = the machine that runs `prisma generate` (local dev).
+  // "debian-openssl-3.0.x" = the production server runtime — without it, deploys
+  // fail with "could not locate the Query Engine" because the engine binary for
+  // that platform is never generated. See pris.ly/engine-not-found-tooling-investigation.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
