@@ -73,6 +73,34 @@ model User {
   transfersFrom      UserTransfer[]          @relation("TransferFrom")
   transfersTo        UserTransfer[]          @relation("TransferTo")
   transfersDecided   UserTransfer[]          @relation("TransferredBy")
+
+  // Housekeeping / inspection module
+  hkRounds           InspectionRound[]       @relation("HkRoundUser")
+  hkVisits           InspectionVisit[]       @relation("HkVisitUser")
+  hkPhotos           InspectionPhoto[]       @relation("HkPhotoUser")
+  hkDevices          DeviceRegistration[]    @relation("HkDeviceUser")
+
+  // Housekeeping — issues & corrective actions (Phase 6)
+  hkIssuesRaised     HkIssue[]               @relation("HkIssueRaiser")
+  hkIssuesAssigned   HkIssue[]               @relation("HkIssueAssignee")
+  hkIssuesClosed     HkIssue[]               @relation("HkIssueCloser")
+  hkActions          CorrectiveAction[]      @relation("HkActionAssignee")
+  hkReinspections    ReinspectionRecord[]    @relation("HkReinspectionVerifier")
+
+  // Housekeeping — generator monitoring (Phase 7)
+  genEvents          GeneratorEvent[]        @relation("GenEventUser")
+  genReadings        GeneratorReading[]      @relation("GenReadingUser")
+  genRefills         GeneratorRefill[]       @relation("GenRefillUser")
+  genDiscrepancies   GeneratorDiscrepancy[]  @relation("GenDiscrepancyResolver")
+
+  // Housekeeping — alerts & scoring (Phase 8)
+  hkAlertsAcked      HkAlert[]               @relation("HkAlertAck")
+  hkScores           HkEfficiencyScore[]     @relation("HkEfficiencyUser")
+  hkScoreOverrides   HkEfficiencyScore[]     @relation("HkEfficiencyOverride")
+
+  // Housekeeping — client cleaning requests (Phase 9)
+  crAssigned         CleaningRequest[]       @relation("CrAssignee")
+  crEvents           CleaningRequestEvent[]  @relation("CrEventActor")
 }
 
 // ============= CENTERS =============
@@ -111,6 +139,15 @@ model Center {
   floors        Floor[]
   zones         Zone[]
   spaces        Space[]
+
+  // Housekeeping / inspection module
+  inspectionLocations InspectionLocation[]
+  inspectionRounds    InspectionRound[]
+  hkIssues            HkIssue[]
+  generators          Generator[]
+  hkAlerts            HkAlert[]
+  emailGroups         EmailGroup[]
+  cleaningRequests    CleaningRequest[]
 }
 
 // ============= CABINS (NEW) =============
@@ -315,6 +352,10 @@ model Client {
 
   // Occupancy module
   allocations       Allocation[]
+
+  // Housekeeping — client cleaning requests (Phase 9)
+  cleaningRequests CleaningRequest[]
+
 }
 
 model Contract {
@@ -771,6 +812,7 @@ model Floor {
   zones     Zone[]
   spaces    Space[]
   cabins    Cabin[]
+  inspectionLocations InspectionLocation[]
 
   @@unique([centerId, level])
   @@index([centerId])
@@ -992,4 +1034,836 @@ model UserTransfer {
   createdAt           DateTime @default(now())
 
   @@index([fromUserId])
+}
+
+// ============================================================================
+// HOUSEKEEPING / INSPECTION MODULE
+// Design + phase checklist: docs/housekeeping-module.md
+// Phase 1 scope — the models needed by the inspection flow (locations, QR,
+// rounds, visits, photos, GPS, devices). Issues / generator / alerts / cleaning
+// requests land in later phases and are deliberately not declared yet.
+// ============================================================================
+
+enum HkLocationCategory {
+  BATHROOM
+  COMMON_AREA
+  PARKING
+  FRONT_AREA
+  BACK_AREA
+  GUARD_ROOM
+  ELECTRICITY_ROOM
+  GENERATOR_AREA
+  FUEL_TANK
+  PANTRY
+  MEETING_ROOM
+  RECEPTION
+  OTHER
+}
+
+enum HkRoundStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum HkVisitStatus {
+  SCANNED      // QR accepted, photos not yet submitted
+  SUBMITTED    // photos captured + submitted
+  REJECTED     // rejected by a reviewer
+}
+
+enum HkPhotoSource {
+  CAMERA       // captured live in-app (the norm)
+  GALLERY      // manager exception — always flagged
+}
+
+// An inspectable area. NOT a `Space`: Space is rentable inventory tied to
+// allocations/invoices; a bathroom or guard room is not rentable and must never
+// affect occupancy maths.
+model InspectionLocation {
+  id                 String             @id @default(cuid())
+  centerId           String
+  center             Center             @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  floorId            String?
+  floor              Floor?             @relation(fields: [floorId], references: [id])
+
+  name               String
+  category           HkLocationCategory @default(OTHER)
+  sortOrder          Int                @default(0)
+
+  // Geofence — null lat/lng means "not yet captured"; verification then flags
+  // rather than rejects, so a half-configured centre still works.
+  lat                Float?
+  lng                Float?
+  geofenceRadiusM    Int                @default(50)
+
+  requiredPhotoCount Int                @default(4)
+  requiredAngles     String?            @db.Text  // JSON array of angle labels
+  checklist          String?            @db.Text  // JSON array of checklist items
+  minDwellSeconds    Int                @default(60)
+  frequencyPerDay    Int                @default(1)
+  priority           String             @default("NORMAL") // LOW|NORMAL|HIGH|CRITICAL
+
+  active             Boolean            @default(true)
+  deletedAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  qrCodes            LocationQrCode[]
+  clientQrCodes      ClientQrCode[]
+  visits             InspectionVisit[]
+  photos             InspectionPhoto[]
+  issues             HkIssue[]
+  cleaningRequests   CleaningRequest[]
+
+  @@index([centerId, active])
+  @@index([floorId])
+  @@index([centerId, sortOrder])
+}
+
+// The printed QR. `code` is opaque and random — it carries no centre/area
+// information; everything is resolved server-side. Rotation inserts a new row
+// and deactivates the old one, so an old printout can be identified, never
+// silently accepted.
+model LocationQrCode {
+  id         String             @id @default(cuid())
+  locationId String
+  location   InspectionLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  code       String             @unique
+  version    Int                @default(1)
+  active     Boolean            @default(true)
+  rotatedAt  DateTime?
+  createdAt  DateTime           @default(now())
+
+  visits     InspectionVisit[]
+
+  @@index([locationId, active])
+}
+
+model InspectionRound {
+  id          String            @id @default(cuid())
+  centerId    String
+  center      Center            @relation(fields: [centerId], references: [id])
+  userId      String
+  user        User              @relation("HkRoundUser", fields: [userId], references: [id])
+
+  status      HkRoundStatus     @default(IN_PROGRESS)
+  startedAt   DateTime          @default(now())
+  completedAt DateTime?
+  distanceM   Float?
+  score       Float?
+  flags       String?           @db.Text // JSON array of verification flags
+  notes       String?           @db.Text
+
+  visits      InspectionVisit[]
+  gpsLogs     GpsLog[]
+
+  @@index([centerId, startedAt])
+  @@index([userId, status])
+}
+
+// One scan + submission at one location. `scannedAt`/`submittedAt` are SERVER
+// time; device-reported time is kept separately on photos so the two can be
+// compared without a device clock ever moving a server timestamp.
+model InspectionVisit {
+  id            String             @id @default(cuid())
+  roundId       String
+  round         InspectionRound    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  locationId    String
+  location      InspectionLocation @relation(fields: [locationId], references: [id])
+  qrCodeId      String?
+  qrCode        LocationQrCode?    @relation(fields: [qrCodeId], references: [id])
+  userId        String
+  user          User               @relation("HkVisitUser", fields: [userId], references: [id])
+
+  sequence      Int
+  scannedAt     DateTime           @default(now())
+  submittedAt   DateTime?
+  dwellSeconds  Int?
+
+  deviceId      String?
+  lat           Float?
+  lng           Float?
+  gpsAccuracyM  Float?
+  distanceM     Float?             // metres from the location's saved point
+  geofenceOk    Boolean            @default(false)
+
+  status        HkVisitStatus      @default(SCANNED)
+  flags         String?            @db.Text // JSON array of verification flags
+  observations  String?            @db.Text
+
+  photos        InspectionPhoto[]
+  issues        HkIssue[]
+
+  @@index([roundId, sequence])
+  @@index([locationId, scannedAt])
+  @@index([userId, scannedAt])
+}
+
+// Photo files live OUTSIDE public/ and are served only via signed, role-checked
+// URLs — inspection evidence must not be readable by URL guess.
+model InspectionPhoto {
+  id            String             @id @default(cuid())
+  // Null for corrective-action "after" photographs (Phase 6): those belong to an
+  // HkIssue, not to an inspection visit.
+  visitId       String?
+  visit         InspectionVisit?   @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  locationId    String
+  location      InspectionLocation @relation(fields: [locationId], references: [id])
+  userId        String
+  user          User               @relation("HkPhotoUser", fields: [userId], references: [id])
+
+  angle         String                       // e.g. "Entrance / full area"
+  slot          Int                          // 0-based index into requiredAngles
+  filePath      String             @db.Text  // server-side path; never sent to the client
+  mimeType      String
+  sizeBytes     Int
+
+  captureAt     DateTime?                    // device-reported
+  serverAt      DateTime           @default(now())
+  lat           Float?
+  lng           Float?
+  deviceId      String?
+
+  sha256        String                       // exact-duplicate detection
+  pHash         String?                      // perceptual hash — near-duplicate detection
+  qualityScore  Float?
+  source        HkPhotoSource      @default(CAMERA)
+  beforeAfter   String             @default("BEFORE") // BEFORE|AFTER
+  retakeReason  String?
+  flags         String?            @db.Text  // JSON array (DUPLICATE, LOW_QUALITY, …)
+
+  aiStatus      String             @default("PENDING") // PENDING|DONE|FAILED|SKIPPED
+  createdAt     DateTime           @default(now())
+
+  // Phase 6 — a photo may serve as an issue's "before" or an action's "after" evidence.
+  issuesBefore  HkIssue[]          @relation("HkIssueBefore")
+  actionsAfter  CorrectiveAction[] @relation("HkActionAfter")
+
+  @@index([visitId, slot])
+  @@index([locationId, createdAt])
+  @@index([sha256])
+  @@index([pHash])
+}
+
+// GPS breadcrumbs, recorded ONLY while a round is active (privacy constraint).
+model GpsLog {
+  id        String          @id @default(cuid())
+  roundId   String
+  round     InspectionRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  userId    String
+  at        DateTime        @default(now())
+  lat       Float
+  lng       Float
+  accuracyM Float?
+
+  @@index([roundId, at])
+}
+
+model DeviceRegistration {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("HkDeviceUser", fields: [userId], references: [id])
+  deviceId    String
+  fingerprint String?   @db.Text
+  label       String?
+  lastSeenAt  DateTime  @default(now())
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+}
+
+// Key/value config (tolerances, weightages, AI prompts, retention, SLA targets)
+// — avoids a schema migration per config knob.
+model HkSetting {
+  key       String   @id
+  value     String   @db.Text // JSON
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// HOUSEKEEPING — ISSUES & CORRECTIVE ACTIONS (Phase 6)
+// docs/housekeeping-module.md §3 Phase 6
+// ============================================================================
+
+enum HkSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum HkIssueStatus {
+  OPEN          // raised, not yet assigned
+  ASSIGNED      // assigned, work not started
+  IN_PROGRESS   // assignee marked started
+  AWAITING_VERIFICATION // work submitted with after-photo, pending sign-off
+  CLOSED        // verified and closed
+  REJECTED      // verification failed → reinspection recorded, returns to ASSIGNED
+  CANCELLED     // raised in error
+}
+
+enum HkIssueSource {
+  INSPECTION    // raised by a supervisor during a round
+  AI            // auto-created from an AI finding (Phase 5)
+  CLIENT        // from a client cleaning request / complaint (Phase 9)
+  MANUAL        // raised directly from the issues console
+}
+
+model HkIssue {
+  id          String             @id @default(cuid())
+  centerId    String
+  center      Center             @relation(fields: [centerId], references: [id])
+  locationId  String?
+  location    InspectionLocation? @relation(fields: [locationId], references: [id])
+  visitId     String?
+  visit       InspectionVisit?   @relation(fields: [visitId], references: [id])
+
+  source      HkIssueSource      @default(MANUAL)
+  category    String             // cleanliness | maintenance | safety | consumables | presentation
+  title       String
+  description String?            @db.Text
+  severity    HkSeverity         @default(MEDIUM)
+  status      HkIssueStatus      @default(OPEN)
+
+  // Photo evidence. beforePhoto may come from the inspection that raised it.
+  beforePhotoId String?
+  beforePhoto   InspectionPhoto? @relation("HkIssueBefore", fields: [beforePhotoId], references: [id])
+
+  raisedById  String
+  raisedBy    User               @relation("HkIssueRaiser", fields: [raisedById], references: [id])
+  assigneeId  String?
+  assignee    User?              @relation("HkIssueAssignee", fields: [assigneeId], references: [id])
+
+  dueAt       DateTime?          // derived from severity SLA at assignment
+  escalatedAt DateTime?          // set by the escalation cron; prevents repeat alerts
+  closedById  String?
+  closedBy    User?              @relation("HkIssueCloser", fields: [closedById], references: [id])
+  closedAt    DateTime?
+
+  // Optional bridge to the existing client-facing Ticket flow.
+  ticketId    String?
+
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  actions       CorrectiveAction[]
+  reinspections ReinspectionRecord[]
+
+  @@index([centerId, status])
+  @@index([assigneeId, status])
+  @@index([status, dueAt])
+  @@index([locationId])
+  @@index([visitId])
+}
+
+// One work attempt against an issue. A rejected attempt leaves its row intact and
+// a new one is created on retry — the history of attempts is never overwritten.
+model CorrectiveAction {
+  id           String    @id @default(cuid())
+  issueId      String
+  issue        HkIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  assigneeId   String
+  assignee     User      @relation("HkActionAssignee", fields: [assigneeId], references: [id])
+
+  startedAt    DateTime?
+  completedAt  DateTime?
+  afterPhotoId String?
+  afterPhoto   InspectionPhoto? @relation("HkActionAfter", fields: [afterPhotoId], references: [id])
+  notes        String?   @db.Text
+  unableReason String?   @db.Text  // set when the assignee cannot complete it
+
+  createdAt    DateTime  @default(now())
+
+  @@index([issueId])
+  @@index([assigneeId])
+}
+
+// Immutable verification record — one row per verify/reject decision.
+model ReinspectionRecord {
+  id           String    @id @default(cuid())
+  issueId      String
+  issue        HkIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  actionId     String?
+  verifiedById String
+  verifiedBy   User      @relation("HkReinspectionVerifier", fields: [verifiedById], references: [id])
+  verdict      String    // PASS | FAIL
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+
+  @@index([issueId])
+}
+
+// ============================================================================
+// HOUSEKEEPING — GENERATOR MONITORING (Phase 7)
+// docs/housekeeping-module.md §3 Phase 7 · brief §11
+// ============================================================================
+
+enum GenEventType {
+  ON
+  OFF
+}
+
+// Why a reading was taken. PERIODIC is the mandatory 30-minute photo while running.
+enum GenReadingKind {
+  START
+  PERIODIC
+  STOP
+  REFILL
+  SPOT_CHECK
+}
+
+model Generator {
+  id              String   @id @default(cuid())
+  centerId        String
+  center          Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+  name            String
+  code            String                     // asset/plate code, unique per centre
+  tankCapacityL   Float?
+  // Expected diesel burn range, used by the "unusual consumption" rule.
+  normalLphMin    Float?
+  normalLphMax    Float?
+  photoIntervalMin Int     @default(30)      // mandatory photo cadence while ON
+  graceMin        Int      @default(10)      // slack before a missed photo is raised
+  maxRunHours     Float    @default(12)      // "ON beyond a configured duration"
+  active          Boolean  @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  events        GeneratorEvent[]
+  readings      GeneratorReading[]
+  refills       GeneratorRefill[]
+  discrepancies GeneratorDiscrepancy[]
+
+  @@unique([centerId, code])
+  @@index([centerId, active])
+}
+
+// An ON or OFF event. `atServer` is the authoritative time — never client-supplied.
+// `atClaimed` records what the operator said, so backdating is detectable rather
+// than silently accepted.
+model GeneratorEvent {
+  id          String       @id @default(cuid())
+  generatorId String
+  generator   Generator    @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  centerId    String
+  type        GenEventType
+  atServer    DateTime     @default(now())
+  atClaimed   DateTime?
+  userId      String
+  user        User         @relation("GenEventUser", fields: [userId], references: [id])
+
+  reason      String?
+  loadReading Float?
+  comments    String?      @db.Text
+
+  // Set on the OFF event once the run is closed out.
+  runMinutes  Float?
+  fuelUsedL   Float?
+  litresPerHour Float?
+
+  readings    GeneratorReading[]
+
+  @@index([generatorId, atServer])
+  @@index([centerId, type])
+}
+
+// Append-only ledger. Every row links to the previous reading for the same
+// generator, so deltas are computable without re-scanning the table.
+model GeneratorReading {
+  id                String          @id @default(cuid())
+  generatorId       String
+  generator         Generator       @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  centerId          String
+  at                DateTime        @default(now())   // server time
+  userId            String
+  user              User            @relation("GenReadingUser", fields: [userId], references: [id])
+
+  kind              GenReadingKind  @default(SPOT_CHECK)
+  runningAtReading  Boolean         @default(false)   // was the generator ON when taken
+
+  // Authoritative values (what the operator confirmed after seeing the OCR guess).
+  fuelReading       Float?
+  hourMeter         Float?
+
+  // What OCR read, kept alongside so the two can be compared.
+  ocrFuel           Float?
+  ocrHourMeter      Float?
+  ocrConfidence     Float?
+  ocrRaw            String?         @db.Text
+
+  photoId           String?
+  photo             GeneratorPhoto? @relation(fields: [photoId], references: [id])
+
+  previousReadingId String?         @unique
+  previousReading   GeneratorReading?  @relation("ReadingChain", fields: [previousReadingId], references: [id])
+  nextReading       GeneratorReading?  @relation("ReadingChain")
+
+  fuelDelta         Float?
+  hourDelta         Float?
+
+  eventId           String?
+  event             GeneratorEvent? @relation(fields: [eventId], references: [id])
+
+  createdAt         DateTime        @default(now())
+
+  discrepancies     GeneratorDiscrepancy[]
+
+  @@index([generatorId, at])
+  @@index([centerId, at])
+}
+
+// Generator photos live in the same private store as inspection photos and are
+// served through the same signed-URL route.
+model GeneratorPhoto {
+  id          String   @id @default(cuid())
+  generatorId String
+  centerId    String
+  userId      String
+  kind        String   // PANEL | TANK | METER | REFILL
+  filePath    String   @db.Text
+  mimeType    String
+  sizeBytes   Int
+  sha256      String
+  pHash       String?
+  captureAt   DateTime?
+  serverAt    DateTime @default(now())
+  lat         Float?
+  lng         Float?
+  flags       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  readings    GeneratorReading[]
+  refills     GeneratorRefill[]
+
+  @@index([generatorId, createdAt])
+  @@index([sha256])
+  @@index([pHash])
+}
+
+model GeneratorRefill {
+  id          String    @id @default(cuid())
+  generatorId String
+  generator   Generator @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  centerId    String
+  at          DateTime  @default(now())
+  userId      String
+  user        User      @relation("GenRefillUser", fields: [userId], references: [id])
+  litres      Float
+  costPerL    Float?
+  totalCost   Float?
+  vendor      String?
+  invoiceRef  String?
+  photoId     String?
+  photo       GeneratorPhoto? @relation(fields: [photoId], references: [id])
+  fuelBefore  Float?
+  fuelAfter   Float?
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+
+  @@index([generatorId, at])
+  @@index([centerId, at])
+}
+
+// One row per rule trip. `ruleCode` maps to lib/housekeeping/generator-rules.ts.
+model GeneratorDiscrepancy {
+  id          String    @id @default(cuid())
+  generatorId String
+  generator   Generator @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  centerId    String
+  ruleCode    String    // GEN_FUEL_NO_EVENT, GEN_HOURS_NO_EVENT, …
+  severity    String    @default("HIGH") // CRITICAL | HIGH | MEDIUM | LOW
+  title       String
+  detail      String?   @db.Text
+  expected    String?
+  actual      String?
+  delta       Float?
+  readingId   String?
+  reading     GeneratorReading? @relation(fields: [readingId], references: [id])
+  eventId     String?
+  detectedAt  DateTime  @default(now())
+
+  // Triage — the record itself is never deleted.
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?     @relation("GenDiscrepancyResolver", fields: [resolvedById], references: [id])
+  resolution   String?   @db.Text
+  issueId      String?   // optional bridge into the Phase 6 issue workflow
+
+  @@index([generatorId, detectedAt])
+  @@index([centerId, resolvedAt])
+  @@index([ruleCode])
+}
+
+// ============================================================================
+// HOUSEKEEPING — ALERTS, NOTIFICATIONS & SCORING (Phase 8)
+// docs/housekeeping-module.md §3c · brief §12
+// ============================================================================
+
+enum HkAlertStatus {
+  NEW
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+// A named recipient list. `kind` maps to the brief's groups (management,
+// facility, accounts, security) and a group may be scoped to one centre.
+model EmailGroup {
+  id        String   @id @default(cuid())
+  name      String
+  kind      String   @default("CUSTOM") // MANAGEMENT|FACILITY|ACCOUNTS|SECURITY|CENTRE|CUSTOM
+  centerId  String?                     // null = applies to every centre
+  center    Center?  @relation(fields: [centerId], references: [id])
+  toEmails  String   @db.Text           // JSON array
+  ccEmails  String?  @db.Text           // JSON array
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, active])
+  @@index([centerId])
+}
+
+// One row per alert-worthy event. Deliberately separate from HkIssue: an issue
+// is work to be done, an alert is a notification about something that happened.
+model HkAlert {
+  id          String        @id @default(cuid())
+  centerId    String
+  center      Center        @relation(fields: [centerId], references: [id])
+  alertType   String        // GENERATOR_DISCREPANCY | CRITICAL_ISSUE | ISSUE_OVERDUE | MISSED_INSPECTION | SUSPICIOUS_SCAN | DUPLICATE_PHOTO
+  severity    String        @default("HIGH") // CRITICAL|HIGH|MEDIUM|LOW
+  title       String
+  body        String?       @db.Text
+  // Loose links — an alert may point at any subject without a hard FK per type.
+  subjectType String?       // HkIssue | GeneratorDiscrepancy | InspectionVisit
+  subjectId   String?
+  dedupeKey   String?       // stops the same condition alerting repeatedly
+  meta        String?       @db.Text     // JSON: readings, deltas, photo ids, deep link
+
+  status      HkAlertStatus @default(NEW)
+  ackById     String?
+  ackBy       User?         @relation("HkAlertAck", fields: [ackById], references: [id])
+  ackAt       DateTime?
+  resolvedAt  DateTime?
+
+  createdAt   DateTime      @default(now())
+
+  notifications NotificationLog[]
+
+  @@index([centerId, status])
+  @@index([alertType, createdAt])
+  @@unique([dedupeKey])
+}
+
+// Delivery record — who was emailed, whether it left the building, and what
+// happened next. Kept append-only.
+model NotificationLog {
+  id         String    @id @default(cuid())
+  alertId    String?
+  alert      HkAlert?  @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  channel    String    @default("EMAIL") // EMAIL | IN_APP
+  recipients String    @db.Text          // JSON array of addresses
+  subject    String?
+  status     String    @default("PENDING") // PENDING|SENT|FAILED|SKIPPED
+  error      String?   @db.Text
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([alertId])
+  @@index([status, createdAt])
+}
+
+// Computed efficiency score for a person over a period. Recomputable at any
+// time; a manual override is stored alongside the computed value, never
+// replacing it, so the audit trail survives.
+model HkEfficiencyScore {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation("HkEfficiencyUser", fields: [userId], references: [id])
+  centerId     String?
+  periodStart  DateTime
+  periodEnd    DateTime
+  score        Float                     // 0–100 computed
+  breakdown    String   @db.Text         // JSON: per-factor scores + weights + reasons
+  issuesClosed Int      @default(0)
+  issuesLate   Int      @default(0)
+  reworkCount  Int      @default(0)
+
+  overrideScore  Float?
+  overrideReason String? @db.Text
+  overrideById   String?
+  overrideBy     User?    @relation("HkEfficiencyOverride", fields: [overrideById], references: [id])
+  overrideAt     DateTime?
+
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, periodStart, periodEnd])
+  @@index([centerId, periodStart])
+}
+
+// ============================================================================
+// HOUSEKEEPING — CLIENT CLEANING REQUESTS (Phase 9)
+// docs/housekeeping-module.md §3d · brief §§23–35
+// ============================================================================
+
+enum CrStatus {
+  NEW
+  ASSIGNED
+  ACCEPTED
+  ON_THE_WAY
+  IN_PROGRESS
+  COMPLETED
+  AWAITING_CONFIRMATION
+  CLOSED
+  REOPENED
+  CANCELLED
+}
+
+enum CrPriority {
+  NORMAL
+  URGENT
+}
+
+// What a client can ask for. Seeded with the brief's 16 services + 8
+// consumables, then fully admin-editable — quantities are data, not code.
+model CleaningRequestType {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  group        String   @default("CLEANING") // CLEANING | CONSUMABLE | REPORT
+  slaMinutes   Int      @default(20)         // per-type target, brief §32
+  autoUrgent   Boolean  @default(false)      // e.g. spill, broken glass
+  requiresPhotos Int    @default(1)          // after-photos needed to complete
+  sortOrder    Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  requests     CleaningRequest[]
+
+  @@index([group, active])
+}
+
+// A client-facing QR, deliberately SEPARATE from LocationQrCode so a staff
+// sticker and a client sticker can never be confused for one another.
+model ClientQrCode {
+  id         String             @id @default(cuid())
+  locationId String
+  location   InspectionLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  code       String             @unique
+  version    Int                @default(1)
+  active     Boolean            @default(true)
+  rotatedAt  DateTime?
+  createdAt  DateTime           @default(now())
+
+  @@index([locationId, active])
+}
+
+model CleaningRequest {
+  id            String              @id @default(cuid())
+  ticketNo      String              @unique      // human-readable, e.g. CR-2608-0042
+  centerId      String
+  center        Center              @relation(fields: [centerId], references: [id])
+  locationId    String?
+  location      InspectionLocation? @relation(fields: [locationId], references: [id])
+  floorId       String?
+
+  typeId        String?
+  type          CleaningRequestType? @relation(fields: [typeId], references: [id])
+  typeNameSnapshot String                          // survives a type being renamed later
+
+  // Requester — no account required, so these are plain fields.
+  clientId      String?
+  client        Client?             @relation(fields: [clientId], references: [id])
+  clientName    String?
+  clientPhone   String?
+  clientEmail   String?
+
+  description   String?             @db.Text
+  photoId       String?                            // optional client photo
+  priority      CrPriority          @default(NORMAL)
+  autoUrgentReason String?
+  status        CrStatus            @default(NEW)
+
+  assigneeId    String?
+  assignee      User?               @relation("CrAssignee", fields: [assigneeId], references: [id])
+
+  dueAt         DateTime?
+  acceptedAt    DateTime?
+  onTheWayAt    DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  closedAt      DateTime?
+
+  // Completion evidence. `qrVerified` records whether the staff member re-scanned
+  // the area QR — brief §28 requires it, and a completion without it is flagged.
+  qrVerified    Boolean             @default(false)
+  qrVerifiedAt  DateTime?
+
+  // Client confirmation (brief §31).
+  confirmation  String?                            // SATISFACTORY | PARTIAL | NOT_COMPLETED
+  rating        Int?                               // 1–5
+  clientComment String?             @db.Text
+  confirmedAt   DateTime?
+
+  // Complaint conversion (brief §33).
+  isComplaint   Boolean             @default(false)
+  complaintReason String?
+  convertedAt   DateTime?
+
+  // Public status link — unguessable, no login.
+  statusToken   String              @unique
+  reopenCount   Int                 @default(0)
+  slaBreached   Boolean             @default(false)
+
+  sourceIp      String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  events        CleaningRequestEvent[]
+  photos        CleaningRequestPhoto[]
+
+  @@index([centerId, status])
+  @@index([assigneeId, status])
+  @@index([status, dueAt])
+  @@index([clientId, createdAt])
+  @@index([locationId, createdAt])
+}
+
+// Append-only lifecycle trail: every status change, who made it and when.
+model CleaningRequestEvent {
+  id        String          @id @default(cuid())
+  requestId String
+  request   CleaningRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fromStatus String?
+  toStatus   String
+  actorId    String?
+  actor      User?           @relation("CrEventActor", fields: [actorId], references: [id])
+  byClient   Boolean         @default(false)
+  note       String?         @db.Text
+  createdAt  DateTime        @default(now())
+
+  @@index([requestId, createdAt])
+}
+
+// Before (client-supplied) and after (staff) photographs.
+model CleaningRequestPhoto {
+  id        String          @id @default(cuid())
+  requestId String
+  request   CleaningRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind      String          @default("AFTER") // BEFORE | AFTER
+  filePath  String          @db.Text
+  mimeType  String
+  sizeBytes Int
+  sha256    String
+  pHash     String?
+  userId    String?
+  flags     String?         @db.Text
+  createdAt DateTime        @default(now())
+
+  @@index([requestId, kind])
+  @@index([sha256])
 }

@@ -36,6 +36,19 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
     ]
   },
   {
+    title: "Housekeeping", items: [
+      { mod: "housekeeping", href: "/housekeeping", label: "HK Dashboard", icon: "🧹" },
+      { mod: "hk_inspect", href: "/housekeeping/inspect", label: "Inspections", icon: "📸" },
+      { mod: "hk_issues", href: "/housekeeping/issues", label: "Issues & Actions", icon: "🚨" },
+      { mod: "hk_issues", href: "/housekeeping/tasks", label: "My Tasks", icon: "🧽" },
+      { mod: "hk_requests", href: "/housekeeping/requests", label: "Cleaning Requests", icon: "🧼" },
+      { mod: "hk_generator", href: "/housekeeping/generator", label: "Generator", icon: "⚡" },
+      { mod: "housekeeping", href: "/housekeeping/alerts", label: "Alerts", icon: "🔔" },
+      { mod: "hk_reports", href: "/housekeeping/reports", label: "HK Reports", icon: "📋" },
+      { mod: "hk_admin", href: "/housekeeping/setup", label: "HK Setup / QR", icon: "🔳" },
+    ]
+  },
+  {
     title: "People", items: [
       { mod: "my_attendance", href: "/my-attendance", label: "My Attendance", icon: "🕒" },
       { mod: "staff_attendance", href: "/staff-attendance", label: "Staff Attendance", icon: "📍" },

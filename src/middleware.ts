@@ -19,6 +19,12 @@ const PUBLIC_PATHS = [
   "/api/invites",                  // patch v4 — public invite verify/accept (token subpaths)
   "/api/password-resets/use",      // patch v4 — public token-based password set
   "/api/leads/public",
+  // Phase 9 — public client cleaning requests. Scoped to these three paths
+  // only; every other /api/housekeeping/* route stays session-protected.
+  // All three are rate-limited in-handler (src/lib/housekeeping/rate-limit.ts).
+  "/api/housekeeping/requests/public",   // submit a request
+  "/api/housekeeping/requests/resolve",  // resolve a client QR → area + catalogue
+  "/api/housekeeping/requests/status",   // token-scoped status + confirmation
 ];
 
 function isPublic(pathname: string) {

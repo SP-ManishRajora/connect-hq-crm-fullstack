@@ -17,6 +17,11 @@ All project documentation lives here. Start with whichever section fits your nee
 - **[occupancy-module.md](./occupancy-module.md)** — design, decisions, phase plan, schema, RBAC, events, and convergence with Seat Map. The source of truth for the module across sessions.
 - **[occupancy-and-seatmap-functionality.md](./occupancy-and-seatmap-functionality.md)** — behavior-focused reference: what Occupancy and Seat Map do and the business rules that govern them.
 
+## 🧹 Housekeeping, inspection & generator monitoring (in-depth)
+- **[housekeeping-module.md](./housekeeping-module.md)** — QR-based centre inspections, AI photo analysis, corrective actions, generator monitoring, alerts, and the client cleaning-request module. Decisions, phase-by-phase development checklist, role mapping, and acceptance-criteria trace. The source of truth for the module across sessions.
+- **[housekeeping-deferred.md](./housekeeping-deferred.md)** — running ledger of items consciously skipped inside completed phases, blocked work, and open business decisions. Cleared after Phase 10.
+- **[houskeepingFeacture.md](./houskeepingFeacture.md)** — the raw client requirement brief the module is built from.
+
 ## 🚀 Deployment
 - **[deployment-guide.md](./deployment-guide.md)** — full production deployment guide (Next.js 14 + Prisma), framed for Laravel devs.
 - **[server-deployment.md](./server-deployment.md)** — concise live-server update/deploy flow (git pull → build → restart).

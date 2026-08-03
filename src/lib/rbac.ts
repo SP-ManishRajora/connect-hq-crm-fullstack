@@ -37,6 +37,17 @@ export const MODULE_ACCESS: Record<string, Role[]> = {
   occupancy:         ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER", "SALES", "ACCOUNTS"],
   occupancy_manage:  ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER"],   // create/edit/transfer/allocate
   occupancy_reports: ["ADMIN", "OWNER", "ACCOUNTS", "MANAGER", "CENTER_MANAGER"],
+  // Housekeeping / inspection / generator module — see docs/housekeeping-module.md §4
+  // for the brief's persona → ERP role mapping. Supervisor + Housekeeping Manager +
+  // Security all map onto OPS; HkStaff.staffRole is the finer discriminator.
+  housekeeping:   ["ADMIN", "OWNER", "MANAGER", "OPS", "CENTER_MANAGER"], // dashboard
+  hk_inspect:     ["ADMIN", "OWNER", "OPS", "CENTER_MANAGER"],            // run rounds, scan, photos
+  hk_issues:      ["ADMIN", "OWNER", "MANAGER", "OPS", "CENTER_MANAGER"], // issues + corrective actions
+  hk_requests:    ["ADMIN", "OWNER", "MANAGER", "OPS", "CENTER_MANAGER"], // client cleaning requests
+  hk_generator:   ["ADMIN", "OWNER", "MANAGER", "OPS"],                   // generator ON/OFF, readings
+  hk_reports:     ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER"],
+  hk_admin:       ["ADMIN", "OWNER"],                                     // locations, QR, settings
+
   cashflow:     ["ADMIN"],
   audit_logs:   ["ADMIN", "OWNER"],
   client_portal:["CLIENT"],
