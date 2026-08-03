@@ -19,6 +19,7 @@ All project documentation lives here. Start with whichever section fits your nee
 
 ## 🧹 Housekeeping, inspection & generator monitoring (in-depth)
 - **[housekeeping-module.md](./housekeeping-module.md)** — QR-based centre inspections, AI photo analysis, corrective actions, generator monitoring, alerts, and the client cleaning-request module. Decisions, phase-by-phase development checklist, role mapping, and acceptance-criteria trace. The source of truth for the module across sessions.
+- **[housekeeping-deployment.md](./housekeeping-deployment.md)** — deploying the module to live: the 7 new env vars, private photo storage, seed scripts, 5 cron jobs, backups, and a post-deploy smoke test.
 - **[housekeeping-deferred.md](./housekeeping-deferred.md)** — running ledger of items consciously skipped inside completed phases, blocked work, and open business decisions. Cleared after Phase 10.
 - **[houskeepingFeacture.md](./houskeepingFeacture.md)** — the raw client requirement brief the module is built from.
 
