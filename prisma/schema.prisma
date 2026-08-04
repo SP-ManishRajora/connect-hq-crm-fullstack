@@ -97,6 +97,8 @@ model User {
   hkAlertsAcked      HkAlert[]               @relation("HkAlertAck")
   hkScores           HkEfficiencyScore[]     @relation("HkEfficiencyUser")
   hkScoreOverrides   HkEfficiencyScore[]     @relation("HkEfficiencyOverride")
+  aiReviews          AiPhotoFinding[]        @relation("AiFindingReviewer")
+  hkStaffProfile     HkStaff?                @relation("HkStaffUser")
 
   // Housekeeping — client cleaning requests (Phase 9)
   crAssigned         CleaningRequest[]       @relation("CrAssignee")
@@ -148,6 +150,8 @@ model Center {
   hkAlerts            HkAlert[]
   emailGroups         EmailGroup[]
   cleaningRequests    CleaningRequest[]
+  hkStaff             HkStaff[]
+
 }
 
 // ============= CABINS (NEW) =============
@@ -1115,6 +1119,7 @@ model InspectionLocation {
   photos             InspectionPhoto[]
   issues             HkIssue[]
   cleaningRequests   CleaningRequest[]
+  areaSummaries      AreaSummary[]
 
   @@index([centerId, active])
   @@index([floorId])
@@ -1194,6 +1199,7 @@ model InspectionVisit {
 
   photos        InspectionPhoto[]
   issues        HkIssue[]
+  areaSummary   AreaSummary?
 
   @@index([roundId, sequence])
   @@index([locationId, scannedAt])
@@ -1234,11 +1240,16 @@ model InspectionPhoto {
   flags         String?            @db.Text  // JSON array (DUPLICATE, LOW_QUALITY, …)
 
   aiStatus      String             @default("PENDING") // PENDING|DONE|FAILED|SKIPPED
+  // Phase 10 — set by the retention job when the FILE is purged. The row, its
+  // findings and the audit trail always survive; only the bytes go.
+  purgedAt      DateTime?
   createdAt     DateTime           @default(now())
 
   // Phase 6 — a photo may serve as an issue's "before" or an action's "after" evidence.
   issuesBefore  HkIssue[]          @relation("HkIssueBefore")
   actionsAfter  CorrectiveAction[] @relation("HkActionAfter")
+  // Phase 5 — AI findings for this photograph.
+  aiFindings    AiPhotoFinding[]
 
   @@index([visitId, slot])
   @@index([locationId, createdAt])
@@ -1534,6 +1545,7 @@ model GeneratorPhoto {
   lat         Float?
   lng         Float?
   flags       String?  @db.Text
+  purgedAt    DateTime?
   createdAt   DateTime @default(now())
 
   readings    GeneratorReading[]
@@ -1862,8 +1874,182 @@ model CleaningRequestPhoto {
   pHash     String?
   userId    String?
   flags     String?         @db.Text
+  purgedAt  DateTime?
   createdAt DateTime        @default(now())
 
   @@index([requestId, kind])
   @@index([sha256])
+}
+
+// ============================================================================
+// HOUSEKEEPING — AI VISION ANALYSIS (Phase 5)
+// docs/housekeeping-module.md §3e · brief §§6–7
+// ============================================================================
+
+enum AiJobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+  SKIPPED
+}
+
+// What a supervisor did with an AI finding. Every correction is retained as
+// training signal for evaluating the model later (brief §6).
+enum AiVerdict {
+  UNREVIEWED
+  ACCEPTED
+  CORRECTED
+  ADDED           // the supervisor spotted something the model missed
+  NOT_APPLICABLE
+}
+
+// Queued analysis work. Deliberately a table rather than an in-process queue:
+// AI must NEVER block a submission (brief §6, acceptance #20), so photos save
+// first and analysis happens afterwards — surviving a restart or an outage.
+model AiAnalysisJob {
+  id          String      @id @default(cuid())
+  subjectType String                  // InspectionPhoto | AreaSummary | CorrectiveAction
+  subjectId   String
+  centerId    String?
+  kind        String      @default("PHOTO") // PHOTO | AREA | BEFORE_AFTER | METER
+
+  status      AiJobStatus @default(PENDING)
+  attempts    Int         @default(0)
+  lastError   String?     @db.Text
+  // Backoff: the runner ignores jobs whose nextAttemptAt is still in the future.
+  nextAttemptAt DateTime  @default(now())
+
+  driver      String?
+  model       String?
+  modelVersion String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  durationMs  Int?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([subjectType, subjectId])
+  @@index([centerId, createdAt])
+}
+
+// One issue the model reported in one photograph.
+model AiPhotoFinding {
+  id           String          @id @default(cuid())
+  photoId      String
+  photo        InspectionPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  visitId      String?
+  centerId     String?
+
+  category     String          // cleanliness | consumables | maintenance | safety | presentation
+  issue        String          @db.Text
+  severity     String          // CRITICAL | HIGH | MEDIUM | LOW
+  confidence   Float
+  recommendedAction String?    @db.Text
+
+  // Provenance — brief §6 requires model name, version and timestamp on every result.
+  driver       String
+  model        String
+  modelVersion String?
+  analysedAt   DateTime        @default(now())
+  raw          String?         @db.Text   // the model's own JSON, kept verbatim
+
+  // Human review.
+  verdict      AiVerdict       @default(UNREVIEWED)
+  correctedIssue    String?    @db.Text
+  correctedSeverity String?
+  reviewNote   String?         @db.Text
+  reviewedById String?
+  reviewedBy   User?           @relation("AiFindingReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+
+  // Set when this finding was promoted into a tracked issue.
+  issueId      String?
+
+  createdAt    DateTime        @default(now())
+
+  @@index([photoId])
+  @@index([visitId])
+  @@index([verdict])
+  @@index([centerId, analysedAt])
+}
+
+// One consolidated result per inspected area — NOT four repeated photo analyses
+// (brief §7). Built by merging the findings across a visit's photographs.
+model AreaSummary {
+  id            String          @id @default(cuid())
+  visitId       String          @unique
+  visit         InspectionVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  locationId    String
+  location      InspectionLocation @relation(fields: [locationId], references: [id])
+  centerId      String
+
+  overallCondition String       // excellent | good | fair | poor | critical
+  cleanlinessScore Float?
+  maintenanceScore Float?
+  safetyScore      Float?
+  consumablesScore Float?
+  overallScore     Float?
+
+  criticalCount    Int          @default(0)
+  nonCriticalCount Int          @default(0)
+  reinspectionRequired Boolean  @default(false)
+
+  // Comparison with the previous visit to this area (brief §7).
+  newIssues      String?        @db.Text  // JSON array
+  resolvedIssues String?        @db.Text
+  repeatIssues   String?        @db.Text
+  trend          String?                  // improved | stable | deteriorated | first
+
+  recommendedActions String?    @db.Text  // JSON array
+
+  driver        String?
+  model         String?
+  analysedAt    DateTime        @default(now())
+  createdAt     DateTime        @default(now())
+
+  @@index([locationId, createdAt])
+  @@index([centerId, createdAt])
+}
+
+// ============================================================================
+// HOUSEKEEPING — STAFF ROSTER (Phase 1 item 1.13)
+// ============================================================================
+//
+// Deliberately NOT a rotating-shift system. The business runs ONE shift,
+// 08:00–20:00 (confirmed 2026-08-04), so a pattern/rotation table would be
+// machinery with nothing to express. Start and end times are per-staff fields
+// with that default, which covers the realistic variations (a part-timer, an
+// early opener) without inventing a rota engine nobody needs.
+
+model HkStaff {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation("HkStaffUser", fields: [userId], references: [id], onDelete: Cascade)
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id], onDelete: Cascade)
+
+  // "HH:MM" local time. Defaults are the standard 8-to-8 shift.
+  shiftStart String  @default("08:00")
+  shiftEnd   String  @default("20:00")
+  // Days worked, 0=Sunday … 6=Saturday. Default: every day.
+  workDays   String  @default("[0,1,2,3,4,5,6]") @db.Text
+
+  // How much work this person can reasonably hold at once. Used to normalise
+  // the efficiency score so someone covering a busy floor is not penalised for
+  // carrying more than someone on a quiet one.
+  capacity   Int     @default(10)
+
+  // Areas this person covers. Empty = the whole centre.
+  floorId    String?
+  areaIds    String? @db.Text          // JSON array of InspectionLocation ids
+
+  active     Boolean @default(true)
+  notes      String? @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([centerId, active])
 }

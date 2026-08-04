@@ -26,9 +26,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const photo = await prisma.generatorPhoto.findUnique({
     where: { id: params.id },
-    select: { filePath: true, mimeType: true, centerId: true },
+    select: { filePath: true, mimeType: true, centerId: true, purgedAt: true },
   });
   if (!photo) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // 410 Gone — the reading survives, the photograph was purged by policy.
+  if (photo.purgedAt) {
+    return NextResponse.json(
+      {
+        error: "This photograph was removed under the data-retention policy.",
+        purgedAt: photo.purgedAt,
+      },
+      { status: 410 },
+    );
+  }
 
   if (u.role !== "ADMIN" && u.role !== "OWNER" && u.centerId && photo.centerId !== u.centerId) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });

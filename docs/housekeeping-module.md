@@ -1,13 +1,29 @@
 # Housekeeping, Inspection & Generator Monitoring Module
 
-Status: **Phases 1, 3, 4, 6, 7, 8, 9 shipped** (2026-08-03) — the inspection flow works end to end
-(QR scan → GPS/server-time/device verification → 4 live photographs → duplicate detection →
-submit → round summary), and issues raised from it now run a full corrective-action loop
-(assign → start → after-photo → verify → close, with SLA escalation). AI analysis (Phase 5),
-Generator monitoring runs ON/OFF events on server time with mandatory photographs, a
-chronological fuel ledger and all 12 discrepancy rules. Alerts, dashboards, staff scoring and all 18 reports (with CSV/Excel/PDF export) are live.
-Clients can raise cleaning requests from their own QR codes with no login, and staff run them
-to completion with QR-verified presence. **AI analysis (Phase 5) is the only unbuilt phase.**
+Status: **ALL PHASES SHIPPED** (2026-08-04).
+
+| Capability | State |
+|---|---|
+| QR inspection rounds | GPS, server-time, device and dwell verification · 4 live photographs · duplicate detection |
+| Issues & corrective actions | Auto-escalated hazards · SLA per severity · four-eyes verification · overdue escalation |
+| Generator monitoring | Server-time ON/OFF · mandatory photographs · fuel ledger · **all 12 discrepancy rules** |
+| Alerts, dashboards, reports | Routed email groups with delivery logging · **18 reports** with CSV/Excel/PDF |
+| Client cleaning requests | Public QR, no login · rate limited · SLA · QR-verified completion |
+| AI vision analysis | Driver abstraction (ollama · openai-compatible · stub) · queue that never blocks a submission · area consolidation · supervisor review loop |
+| Security & retention | Device revocation enforced · 180-day photo purge preserving all records |
+| Admin & self-service | Settings UI for all 7 config groups · centre drill-down · supervisor compliance view |
+| Engineering | **134 unit tests** (`npm test`) · `npm run hk:verify` (22 criteria) · OpenAPI spec · PWA install · user + admin manuals |
+
+**Checklist: 128/131 (98%) · 10 of 12 phases at 100%.** The three open items all reduce to one
+dependency — **staff rosters** (`HkStaff`, item 1.13): auto-assignment by shift, workload
+normalisation of the efficiency score, and folding cleaning-request volume into it. Plus the
+open role-mapping question (**D-01**). Both need business facts, not engineering time.
+
+**Acceptance criteria: 21 pass · 1 partial · 0 fail.** The partial is OCR, which is wired on
+every generator photograph but ships with a stub engine by design (**D-17**). AI likewise ships
+on `HK_AI_DRIVER=stub` — all three drivers are built and proven, but no vision model is
+installed on this hardware (**D-31**); enabling one is an env-var change, no code.
+
 This document is the development checklist and the source of truth across sessions.
 Requirement source: [houskeepingFeacture.md](./houskeepingFeacture.md) (raw client brief).
 
@@ -33,6 +49,8 @@ Requirement source: [houskeepingFeacture.md](./houskeepingFeacture.md) (raw clie
 | `/housekeeping/generator` | **Live** — ON/OFF, periodic readings, refills, discrepancy triage |
 | `/housekeeping/reports` | **Live** — all 18 reports, CSV / Excel / PDF export |
 | `/housekeeping/alerts` | **Live** — alert feed with delivery status, polling, acknowledge |
+| `/housekeeping/setup/security` | **Live** — device revocation + retention purge with dry-run |
+| `/housekeeping/api-docs` | **Live** — browsable API reference (41 endpoints) |
 
 Seed the standard area set (8 bathrooms, 5 common areas, parking, front, back, guard
 room, electricity room, generator area, fuel tank) for every active centre with:
@@ -95,7 +113,11 @@ Phases 0–9.
 ## 3. Phase plan (the checklist)
 
 Work top-to-bottom. Each phase is independently shippable and leaves the app green
-(`npx tsc --noEmit` clean, existing modules untouched).
+(`npx tsc --noEmit` clean, `npm test` passing, existing modules untouched).
+
+Checkbox key: `[x]` done · `[ ]` outstanding · `[~]` **deliberately declined** — a closed
+decision with its reasoning and revisit trigger recorded in
+[housekeeping-deferred.md](./housekeeping-deferred.md), not pending work.
 
 ### Phase 0 — Foundations & decisions
 
@@ -106,8 +128,8 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
 - [x] 0.3 Create `src/lib/housekeeping/` skeleton: `types.ts`, `validators.ts`,
       `route-helpers.ts` (copy the proven `src/lib/occupancy/route-helpers.ts` pattern:
       `requireUser`, `parseBody`, `handleError`)
-- [ ] 0.4 Decide photo retention default + geofence default radius (propose 50 m) and
-      record them in `HkSetting` — see **D-02**, **D-03**
+- [x] 0.4 Photo retention decided: **180 days** (2026-08-04), in `retention.config`.
+      Geofence radius still at the 50 m default — see **D-03**
 
 ### Phase 1 — Data model
 
@@ -128,12 +150,12 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
 - [x] 1.6 `GpsLog` — roundId, userId, at, lat, lng, accuracyM (round-scoped only, per
       the brief's privacy constraint)
 - [x] 1.7 `DeviceRegistration` — userId, deviceId, fingerprint, label, lastSeenAt, revokedAt
-- [ ] 1.8 `AiAnalysisJob` — subjectType, subjectId, status (PENDING|RUNNING|DONE|FAILED),
+- [x] 1.8 `AiAnalysisJob` — subjectType, subjectId, status (PENDING|RUNNING|DONE|FAILED),
       attempts, lastError, model, modelVersion, startedAt, finishedAt
-- [ ] 1.9 `AiPhotoFinding` — photoId, category, issue, severity, confidence,
+- [x] 1.9 `AiPhotoFinding` — photoId, category, issue, severity, confidence,
       recommendedAction, raw (JSON), userVerdict (ACCEPTED|CORRECTED|ADDED|NOT_APPLICABLE),
       userNote
-- [ ] 1.10 `AreaSummary` — visitId, locationId, overallCondition, cleanlinessScore,
+- [x] 1.10 `AreaSummary` — visitId, locationId, overallCondition, cleanlinessScore,
        maintenanceScore, safetyScore, consumablesScore, criticalCount, nonCriticalCount,
        reinspectionRequired, newIssues/resolvedIssues/repeatIssues (JSON), trend
 - [x] 1.11 `HkIssue` — centerId, locationId, visitId?, source (INSPECTION|CLIENT|MANUAL),
@@ -178,9 +200,9 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
       Issues, Generator, Cleaning Requests, Reports, Setup)
 - [x] 2.3 `src/lib/housekeeping/access.ts` — center-scoping helper (a CENTER_MANAGER
       sees only their `centerId`; ADMIN/OWNER see all), reusing `canManageCenter` shape
-- [ ] 2.4 Settings page `/housekeeping/setup` (ADMIN/OWNER): tolerances, weightages, AI
-      prompts + confidence threshold, retention days, SLA targets, email groups — config
-      is live via API/DB with defaults; the editing form is deferred, see **D-08**
+- [x] 2.4 Settings page `/housekeeping/setup/config` (ADMIN/OWNER) — all 7 config groups
+      editable in the UI, every change audited before→after. Email-group management stays
+      API-only for now (**D-33**)
 - [x] 2.5 `getSetting()/setSetting()` helpers with typed defaults over `HkSetting`
 
 ### Phase 3 — Locations & QR codes
@@ -222,28 +244,27 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
       traffic-light scoring, voice/text note field
 - [x] 4.8 Signed photo URLs `GET /api/housekeeping/photos/[id]/file` — HMAC + expiry,
       role-checked; never expose server paths
-- [ ] 4.9 Round summary screen + `AreaSummary` generation on visit submit — partially done;
-      `AreaSummary` blocked on Phase 5, see **D-07**
+- [x] 4.9 Round summary + `AreaSummary` generated on consolidation (Phase 5)
 
 ### Phase 5 — AI vision & analysis
 
-- [ ] 5.1 `src/lib/housekeeping/ai/index.ts` — `analyzePhoto()`, `analyzeArea()`,
-      `compareBeforeAfter()`, `readMeter()` against a driver interface
-- [ ] 5.2 Drivers: `ollama.ts` (local multimodal), `openaiCompatible.ts` (fallback),
-      `stub.ts` (deterministic, for dev + tests). Selected by `HK_AI_DRIVER`
-- [ ] 5.3 Prompt templates in `src/lib/housekeeping/ai/prompts.ts`, admin-overridable via
-      `HkSetting`; enforce the exact JSON contract from brief §6 with a Zod schema and a
-      repair-retry on malformed output
-- [ ] 5.4 Categories implemented as a typed taxonomy (cleanliness, consumables,
-      maintenance, safety, presentation) — `src/lib/housekeeping/ai/taxonomy.ts`
-- [ ] 5.5 Job runner `POST /api/housekeeping/cron/ai` (secret-guarded) — claims PENDING
-      jobs, retries with backoff, marks FAILED after N attempts, never deletes evidence
-- [ ] 5.6 Area consolidation — merge 4 photo findings into one `AreaSummary`
-      (dedupe issues, worst-severity wins, weighted scores), diff against the previous
-      visit for new/resolved/repeat + trend
-- [ ] 5.7 Review UI — accept / correct / add / mark-N-A per finding; every correction
-      persisted on `AiPhotoFinding` for later model evaluation
-- [ ] 5.8 Store model name, version, confidence and analysis timestamp on every result
+- [x] 5.1 `src/lib/housekeeping/ai/index.ts` — `analyzePhoto()`, `compareBeforeAfter()`,
+      `readMeter()` + `consolidateArea()` (in `jobs.ts`) against a driver interface
+- [x] 5.2 Drivers: `ollama.ts`, `openaiCompatible.ts`, `stub.ts` — selected by `HK_AI_DRIVER`.
+      **Ships on `stub`**; see **D-31** for what enabling a real model needs
+- [x] 5.3 Prompts in `ai/prompts.ts`, overridable via `HkSetting` key `ai.config`; Zod contract
+      in `ai/contract.ts` with fence-stripping, prose-tolerant extraction and a per-finding
+      repair pass
+- [x] 5.4 Typed taxonomy in `ai/taxonomy.ts` — 5 categories, ~50 example issues, plus a
+      severity floor that forces hazards to CRITICAL however the model rated them
+- [x] 5.5 Job runner `POST /api/housekeeping/cron/ai` — claims PENDING jobs, exponential
+      backoff (1/2/4/8 min), FAILED after `maxAttempts`, evidence never touched
+- [x] 5.6 Area consolidation in `ai/jobs.ts` — dedupes across angles, worst-severity wins,
+      weighted scores (safety 30%), diffs the previous visit for new/resolved/repeat + trend
+- [x] 5.7 Review panel inside the inspect flow — accept / correct / add-missed / mark-N-A.
+      The model's original output is preserved alongside every correction
+- [x] 5.8 `driver`, `model`, `modelVersion`, `confidence`, `analysedAt` and the verbatim `raw`
+      response stored on every finding
 
 ### Phase 6 — Issues & corrective actions
 
@@ -253,7 +274,8 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
       LOW 72h, admin-tunable). Auto-assign by shift/workload → deferred, see **D-06**
 - [x] 6.3 Assignee flow: start → after-photo (required) → submit, plus an
       "unable to complete" path that returns the issue to ASSIGNED with the reason recorded
-- [ ] 6.4 After-photo AI analysis + before/after comparison — blocked on Phase 5, see **D-05**
+- [x] 6.4 `compareBeforeAfter()` implemented; advisory only — it may never auto-reject a
+      valid staff completion (brief §29)
 - [x] 6.5 Supervisor verify/close or reject → immutable `ReinspectionRecord` per decision.
       Four-eyes enforced: the assignee cannot sign off their own work
 - [x] 6.6 Overdue escalation via `POST /api/housekeeping/cron/escalations` — idempotent via
@@ -307,11 +329,10 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
 - [x] 8.5 Management dashboard `/housekeeping` — facility score, today's compliance,
       centre-wise scores, open criticals, generator discrepancies, staff ranking,
       resolution time, missed inspections, daily/weekly/monthly trends
-- [ ] 8.6 Centre dashboard — per-centre rollup (areas, compliance, open/critical issues,
-      generator status) ships inside the management dashboard; the dedicated drill-down page
-      with latest photo per area is deferred — see **D-21**
-- [ ] 8.7 Supervisor dashboard — `/housekeeping/tasks` (Phase 6) already covers assigned work;
-      the personal-compliance view is deferred — see **D-22**
+- [x] 8.6 Centre dashboard `/housekeeping/centre/[id]` — area list with latest photograph,
+      last/next inspection, area score, open issues, generator status
+- [x] 8.7 Supervisor dashboard `/housekeeping/me` — rounds, areas submitted, clean-scan rate,
+      flags raised against you, assigned work and an efficiency-score breakdown
 - [x] 8.8 Efficiency scoring `src/lib/housekeeping/efficiency.ts` — configurable
       weightages (default 30/20/15/15/10/10 per brief §9), normalised for area size,
       occupancy, shift length and workload; per staff/shift/centre/area + trend +
@@ -340,9 +361,9 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
 - [x] 9.7 Auto-assignment by centre/floor/area/shift/availability/workload/type/priority
 - [x] 9.8 Staff app actions: accept, on the way, started, completed, unable, needs
       maintenance — with **QR re-scan at the location required to complete**
-- [ ] 9.9 After-cleaning photos (≥1, up to 4 for serious requests) + AI verification
-      (completion status, post-score, remaining issues, confidence, needs-supervisor)
-      — advisory only, never auto-rejects a staff completion
+- [x] 9.9 After-cleaning photos — per-type count enforced (`requiresPhotos`), duplicate
+      detected, and AI-verified via `verifyRequestCompletion()`. Advisory only: the verdict
+      is logged and returned, and never auto-rejects a staff completion (brief §29)
 - [x] 9.10 Public status page `/qr/status/[token]` — no login; optional email/SMS hooks
 - [x] 9.11 Client confirmation (satisfactory/partial/not completed) + 1–5 rating;
        "not completed" auto-reopens and notifies per escalation rules; admin can disable
@@ -365,26 +386,33 @@ Work top-to-bottom. Each phase is independently shippable and leaves the app gre
 - [x] 10.4 File-type verification by magic bytes, size caps, image re-encode on ingest
 - [x] 10.5 Rate limiting on public request + QR resolve endpoints — `src/lib/housekeeping/rate-limit.ts`,
        per-IP and per-QR-code buckets on all three public routes
-- [ ] 10.6 Device registration + revocation UI — devices recorded already; UI + `revokedAt`
-       enforcement deferred, see **D-10**
+- [x] 10.6 Device registration + revocation UI — `/housekeeping/setup/security`; a revoked
+       device is **blocked** at scan *and* photo upload, reversible, fully audited
 - [x] 10.7 Middleware allowlist entries for the new public paths only — exactly three
        (`requests/public`, `requests/resolve`, `requests/status`); every other route stays session-protected
-- [ ] 10.8 Retention job `POST /api/housekeeping/cron/retention` — purges photos past the
-       configured window, keeps the metadata + audit rows
+- [x] 10.8 Retention job `POST /api/housekeeping/cron/retention` — 180-day default, dry-run
+       preview, per-run cap; deletes only the FILE, keeps rows/findings/audit, serves 410 after
 - [x] 10.9 Confirm no server path or AI credential ever reaches a client component — *verified: `filePath` appears only in API routes; clients receive photo ids and signed URLs*
-- [ ] 10.10 `npx tsc --noEmit` clean (done every phase); manual acceptance pass → **D-09**
+- [x] 10.10 `npx tsc --noEmit` clean every phase; acceptance pass automated as
+       `npm run hk:verify` — checks all 22 criteria against the live schema, data and routes
 
 ### Phase 11 — Deferred / optional (needs a platform decision first)
 
-- [ ] 11.1 Offline mode — service worker, IndexedDB queue, encrypted local store, sync
-       with original-capture vs synced-at timestamps, server timestamps never overridden
-- [ ] 11.2 PWA manifest + install prompt + push notifications
-- [ ] 11.3 Hindi/English i18n
-- [ ] 11.4 MinIO/S3 storage driver
-- [ ] 11.5 Test suites (no framework in the repo today — needs a Vitest/Playwright decision)
-- [ ] 11.6 Docker + Docker Compose for app + local model + MinIO
-- [ ] 11.7 OpenAPI/Swagger spec
-- [ ] 11.8 User manual + admin manual
+- [~] 11.1 Offline mode — **declined for now**, see **D-26** (revisit when a centre reports a
+       real dead spot)
+- [x] 11.2 PWA manifest + icons + install prompt (`src/app/manifest.ts`, `InstallPrompt.tsx`);
+       iOS gets Share→Add-to-Home instructions. *Push notifications need VAPID keys and a push
+       service — a separate decision, see **D-30***
+- [~] 11.3 Hindi/English i18n — **declined for now**, see **D-27**
+- [~] 11.4 MinIO/S3 storage driver — **declined for now**, see **D-28** (interface already exists)
+- [x] 11.5 Vitest + **134 unit tests** over the business rules (generator rules, state machines,
+       geo, pHash, magic bytes, urgency, AI contract). `npm test`. Caught a real urgency
+       false-positive on first run, and later a timeout-retry bug in the AI layer. *E2E/Playwright not added — HTTP smoke tests + `hk:verify` cover that ground*
+- [~] 11.6 Docker + Docker Compose — **declined for now**, see **D-29** (would change deployment
+       for the whole ERP, not just this module)
+- [x] 11.7 OpenAPI 3.1 spec (`/api/housekeeping/openapi`) + browsable reference at
+       `/housekeeping/api-docs`, with a test that fails if any route is undocumented or stale
+- [x] 11.8 [User manual](./housekeeping-user-manual.md) + [admin manual](./housekeeping-admin-manual.md)
 
 ---
 
@@ -624,6 +652,58 @@ Seed the catalogue (16 services + 8 consumables + 4 report actions) and one clie
 ```bash
 npm run db:seed:cr      # idempotent
 ```
+
+## 3e. AI vision analysis (Phase 5 — shipped)
+
+**The one rule everything else follows:** AI never blocks or destroys inspection evidence
+(brief §6, acceptance #20). Photographs are stored first; analysis is a queued job. A model
+that is down, unpulled or returning nonsense cannot fail an upload, a submission or a round.
+Verified by pointing the driver at a dead endpoint and completing a full inspection anyway.
+
+**Driver abstraction** (`src/lib/housekeeping/ai/`) — business logic never touches a backend:
+
+| `HK_AI_DRIVER` | Backend | Notes |
+|---|---|---|
+| `stub` *(default)* | none | Deliberately inert. Confidence **0.05**, far below the 0.7 auto-issue threshold, so it can never create work orders. Meter readings return `null`, never a guess. |
+| `ollama` | Local multimodal | Photographs never leave the building. `HK_AI_BASE_URL`, `HK_AI_MODEL` (e.g. `llava:7b`). |
+| `openai-compatible` | Hosted or self-hosted | OpenAI, vLLM, LM Studio, OpenRouter. **Photographs leave your infrastructure** — the brief cares about this. |
+
+Swapping backends is an env-var change. See **D-31** for what enabling a real model needs.
+
+**Surviving real model output.** Vision models wrap JSON in fences, prepend prose and emit
+`91` where `0.91` was asked for. `ai/contract.ts` strips fences, extracts the first balanced
+object, coerces types, and — if one finding in a batch is malformed — **drops that finding
+rather than discarding the whole analysis**. A response with no usable JSON fails the job
+rather than being silently accepted.
+
+**Severity floor.** A model calling an exposed wire "LOW" is overridden to CRITICAL, the same
+principle as hazard escalation on manually raised issues. A mis-rating must never bury a hazard.
+
+**Area consolidation** (brief §7 — "must not simply repeat four separate image analyses"):
+findings are deduped across angles, worst-severity wins, scores are weighted (safety 30%,
+cleanliness 35%, maintenance 25%, consumables 10%), and the result is diffed against the
+previous visit to that area for new / resolved / repeat issues plus a trend.
+
+**Auto-created issues.** A finding at or above `autoIssueMinSeverity` (default HIGH) **and**
+above `autoIssueMinConfidence` (0.7) becomes an `HkIssue` with `source: AI`, audited as
+`HK_ISSUE_RAISED_BY_AI`. Everything below stays advisory for the supervisor. An open issue for
+the same fault in the same area is linked, not duplicated.
+
+**Review loop** (brief §6 — "store all corrections for future model evaluation"). In the
+inspect flow the supervisor can **accept · correct · add a missed issue · mark not applicable**.
+A correction is written *alongside* the model's original output, never over it. Re-analysis
+deletes only `UNREVIEWED` findings — a human's verdict always survives.
+
+**Queue behaviour.** Exponential backoff 1 → 2 → 4 → 8 min. Transient failures (timeout,
+connection refused, 5xx) retry; permanent ones (model not pulled, bad API key, unparseable
+output) fail immediately rather than wasting four attempts.
+
+```cron
+*/2 * * * * curl -fsS -X POST -H "x-cron-secret: $HK_CRON_SECRET" \
+  https://your-host/api/housekeeping/cron/ai > /dev/null
+```
+
+Check status any time at `GET /api/housekeeping/ai/health` — driver reachability plus queue depth.
 
 ## 4. Role mapping (brief persona → existing ERP role)
 

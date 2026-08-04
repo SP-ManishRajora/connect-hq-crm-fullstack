@@ -246,6 +246,100 @@ export async function setRequestConfig(patch: Partial<RequestConfig>): Promise<R
   return next;
 }
 
+// --- Retention & device policy (Phase 10) ----------------------------------
+
+export type RetentionConfig = {
+  /**
+   * Days to keep the image FILE. Metadata, AI findings, scores and audit rows
+   * are never purged — only the bytes on disk. 0 disables purging entirely.
+   */
+  photoRetentionDays: number;
+  /** Report what would be deleted without deleting it. */
+  dryRun: boolean;
+  /** Safety valve: never delete more than this many files in one run. */
+  maxDeletesPerRun: number;
+  /** A revoked device is refused at scan time rather than merely flagged. */
+  blockRevokedDevices: boolean;
+};
+
+export const RETENTION_DEFAULTS: RetentionConfig = {
+  photoRetentionDays: 180,      // 6 months — chosen 2026-08-04, resolves D-02
+  dryRun: false,
+  maxDeletesPerRun: 5000,
+  blockRevokedDevices: true,
+};
+
+const RETENTION_KEY = "retention.config";
+
+export async function getRetentionConfig(): Promise<RetentionConfig> {
+  try {
+    const row = await prisma.hkSetting.findUnique({ where: { key: RETENTION_KEY } });
+    if (!row) return RETENTION_DEFAULTS;
+    return { ...RETENTION_DEFAULTS, ...(JSON.parse(row.value) as Partial<RetentionConfig>) };
+  } catch {
+    return RETENTION_DEFAULTS;
+  }
+}
+
+export async function setRetentionConfig(patch: Partial<RetentionConfig>): Promise<RetentionConfig> {
+  const current = await getRetentionConfig();
+  const next = { ...current, ...patch };
+  await prisma.hkSetting.upsert({
+    where: { key: RETENTION_KEY },
+    create: { key: RETENTION_KEY, value: JSON.stringify(next) },
+    update: { value: JSON.stringify(next) },
+  });
+  return next;
+}
+
+// --- AI analysis config (Phase 5) ------------------------------------------
+
+export type AiConfig = {
+  /** Queue analysis automatically when a photograph is uploaded. */
+  autoQueue: boolean;
+  /** Findings at or above this severity may become issues automatically. */
+  autoIssueMinSeverity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  /** ...and only above this confidence. The stub sits far below it by design. */
+  autoIssueMinConfidence: number;
+  /** Give up after this many attempts; the job is marked FAILED, never deleted. */
+  maxAttempts: number;
+  /** Jobs claimed per cron tick — CPU inference is slow, so keep this small. */
+  batchSize: number;
+  /** Admin prompt overrides; blank falls back to the defaults. */
+  prompts?: { photo?: string; beforeAfter?: string; meter?: string };
+};
+
+export const AI_DEFAULTS: AiConfig = {
+  autoQueue: true,
+  autoIssueMinSeverity: "HIGH",
+  autoIssueMinConfidence: 0.7,
+  maxAttempts: 4,
+  batchSize: 5,
+};
+
+const AI_KEY = "ai.config";
+
+export async function getAiConfig(): Promise<AiConfig> {
+  try {
+    const row = await prisma.hkSetting.findUnique({ where: { key: AI_KEY } });
+    if (!row) return AI_DEFAULTS;
+    return { ...AI_DEFAULTS, ...(JSON.parse(row.value) as Partial<AiConfig>) };
+  } catch {
+    return AI_DEFAULTS;
+  }
+}
+
+export async function setAiConfig(patch: Partial<AiConfig>): Promise<AiConfig> {
+  const current = await getAiConfig();
+  const next = { ...current, ...patch };
+  await prisma.hkSetting.upsert({
+    where: { key: AI_KEY },
+    create: { key: AI_KEY, value: JSON.stringify(next) },
+    update: { value: JSON.stringify(next) },
+  });
+  return next;
+}
+
 export async function setHkConfig(patch: Partial<HkConfig>): Promise<HkConfig> {
   const current = await getHkConfig();
   const next = { ...current, ...patch };

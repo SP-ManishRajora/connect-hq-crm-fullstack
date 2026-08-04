@@ -6,6 +6,143 @@ changelog see [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
+## Housekeeping — AI Vision Analysis (Phase 5) — final phase
+
+**Requirement:** a locally deployable multimodal vision model behind an abstraction layer,
+structured JSON findings across five categories, consolidated area summaries, a review loop
+that captures corrections, and — explicitly — inspection data that survives AI failure
+(brief §§6–7, acceptance #8, #9, #20, #22).
+
+**Built** (design in [housekeeping-module.md](./housekeeping-module.md) §3e):
+- **3 models** (`housekeeping_ai_analysis` migration): `AiAnalysisJob` (a table, not an
+  in-process queue, so analysis survives a restart), `AiPhotoFinding` (model output *and*
+  human verdict side by side), `AreaSummary`.
+- **Driver abstraction** `src/lib/housekeeping/ai/` — `ollama` (photographs never leave your
+  infrastructure), `openai-compatible` (hosted fallback), `stub` (default). Business logic
+  never touches a backend; switching is one env var.
+- **`contract.ts`** — survives real model output: strips ``` fences, extracts the first
+  balanced JSON object from surrounding prose, coerces `91` → `0.91`, and **drops a single
+  malformed finding rather than discarding the whole analysis**. A severity floor forces
+  hazards to CRITICAL however the model rated them.
+- **`taxonomy.ts`** — the 5 categories and ~50 example issues from brief §6, fed into the
+  prompt so findings are groupable and countable rather than free prose.
+- **`jobs.ts`** — queue with exponential backoff (1/2/4/8 min), transient-vs-permanent error
+  classification, area consolidation (dedupe across angles, worst-severity wins, weighted
+  scores, previous-visit diff) and threshold-gated auto-issue creation.
+- **Review panel** inside the inspect flow: accept · correct · add-missed · mark-N/A. A
+  correction is stored *alongside* the model's original output, never over it; re-analysis
+  deletes only `UNREVIEWED` findings so a human verdict always survives.
+- **5 routes:** `cron/ai`, `ai/health`, findings list, review PATCH, add-missed POST.
+- **32 new unit tests** (134 total) covering fence-stripping, prose tolerance, percentage
+  confidence, partial repair, the severity floor, and stub safety.
+
+**Verified — including the property that matters most.** With the driver pointed at a dead
+endpoint: scan **200**, four photo uploads **201**, submit **200** — a complete inspection with
+AI down. Jobs stayed **PENDING** with the error recorded and a 2-minute backoff, and all 8
+photographs were intact. With the stub: 4 jobs auto-queued on upload, drained 4/4, area
+consolidated, and **zero issues auto-created** (0.05 confidence vs the 0.7 threshold). Review
+loop: accept **200**, `CORRECTED` with nothing corrected **400**, proper correction preserved
+the original text, add-missed recorded at confidence 1 with `driver: human`, and the summary
+rebuilt after each verdict. `tsc` clean, 134/134 tests, production build clean.
+
+**Two bugs the tests caught before shipping:** a genuine timeout (`"The operation timed out"`)
+was classified permanent and would never have retried; and the OpenAPI drift-guard flagged all
+5 new endpoints as undocumented.
+
+**Cleared from the deferred ledger:** **D-04** (AI auto-issues), **D-05** (before/after
+comparison), **D-07** (`AreaSummary`), **D-20** (AI report data).
+
+**Shipping on the stub, deliberately (D-31).** This machine has no GPU, 4.8 GB free RAM and
+2 GB free disk — `llava:7b` needs ~4.7 GB. All three drivers are built and the pipeline is
+proven end to end; enabling a real model is `ollama pull llava:7b` plus `HK_AI_DRIVER=ollama`,
+with no code changes. The stub is inert by design rather than pretending to work.
+
+---
+
+## Housekeeping — Tests, PWA, API Docs & Manuals (Phase 11)
+
+**Requirement:** the deferred/optional set — offline mode, PWA, i18n, MinIO, tests, Docker,
+OpenAPI and manuals. Four were built; four were deliberately declined with recorded reasoning.
+
+**Built:**
+- **Vitest + 102 unit tests** (`npm test`) over the pure business logic: all 12 generator rules,
+  both state machines, hazard escalation, four-eyes verification, SLA maths, complaint
+  conversion, haversine, pHash, magic-byte sniffing. Negative cases are tested as deliberately
+  as positive ones — a rule engine that cries wolf gets muted, and a muted engine protects
+  nothing. **The suite earned its place on the first run by catching a real bug:** a bare
+  `"meeting"` urgency keyword was escalating every routine *meeting-room* clean to URGENT with a
+  halved SLA. Fixed to require "meeting in progress" / "guest arriving", with regression tests
+  for both directions.
+- **PWA** (11.2) — `src/app/manifest.ts`, three generated square icons (incl. maskable with a
+  safe zone), and an install prompt that captures `beforeinstallprompt` and re-fires it from our
+  own button. iOS gets Share→Add-to-Home instructions rather than nothing. `start_url` is the
+  inspect screen, because the people installing this are supervisors on phones. **Smoke test
+  found the manifest returning 307** — middleware was redirecting it to login, which silently
+  kills the install prompt. Allowlisted and re-verified at 200.
+- **OpenAPI 3.1** (11.7) — `/api/housekeeping/openapi` (session-gated: it maps every endpoint
+  and its auth model) plus a server-rendered reference at `/housekeeping/api-docs`. No Swagger-UI
+  bundle: a strict CSP would block its CDN assets. Critically, `tests/openapi-coverage.test.ts`
+  walks the route files on disk and **fails if any endpoint is undocumented or any documented
+  endpoint has been deleted** — a hand-written spec that cannot rot. Verified: 41 paths, 4
+  correctly marked public.
+- **Manuals** (11.8) — [user manual](./housekeeping-user-manual.md) written for supervisors and
+  housekeeping staff (including a "why was this flagged" table), and an
+  [admin manual](./housekeeping-admin-manual.md) covering RBAC, the two QR sets, every tunable
+  setting, and troubleshooting.
+
+**Declined, with the trigger that would justify revisiting** (D-26 → D-30):
+offline mode (build it when a centre reports a *real* dead spot, not speculatively), i18n
+(when non-English-speaking staff join — half-translating is worse than not translating), MinIO
+(when disk is outgrown or a second instance is added; the driver interface already exists),
+Docker (would change deployment for the **whole ERP**, not just this module), and push
+notifications (needs VAPID keys and a decision on what is worth interrupting someone for).
+
+Marked `[~]` in the phase plan — a closed decision, not pending work.
+
+**Verified:** `tsc` clean · `npm test` 102/102 · production build clean · manifest, icons,
+OpenAPI and docs page all served correctly. Test data removed.
+
+---
+
+## Housekeeping — Security, Audit & Retention (Phase 10)
+
+**Requirement:** Device registration and revocation, a retention job that purges photographs
+past a configured window while keeping metadata and audit rows, and a pass over every
+acceptance criterion (brief §§18–19).
+
+**Built:**
+- **Device revocation that actually revokes.** `revokedAt` existed in the schema since Phase 1
+  but was enforced nowhere — a "revoked" device could still scan. `assertDeviceAllowed()` now
+  runs **before any write** on both the scan and photo-upload routes, so a rejected scan leaves
+  no partial record. `touchDevice()` deliberately never clears `revokedAt`, so re-registering
+  cannot silently undo a revocation. Admin UI at `/housekeeping/setup/security` lists each
+  device with owner and scan count; revoke and restore are both audited.
+- **Retention job** `POST /api/housekeeping/cron/retention` — **180 days** (the user's choice,
+  resolving D-02). Deliberately conservative: only the image *file* is deleted; the row, its
+  hashes, AI findings, scores and audit trail are kept permanently. `purgedAt` is stamped so a
+  purged photo serves **410 Gone** with an explanation rather than a broken image. Includes a
+  `?dry=1` preview, a `maxDeletesPerRun` cap, and `ADMIN`/`OWNER`-only manual triggering.
+- **`npm run hk:verify`** (resolving D-09) — checks all 22 acceptance criteria against the live
+  schema, data and routes rather than a hand-ticked list, and exits non-zero on regression.
+- 3 new `purgedAt` columns (`housekeeping_photo_retention` migration), `src/lib/housekeeping/devices.ts`,
+  and a `deletePhotoFile()` helper with path-escape protection.
+- **Verified:** `tsc` + build clean. Device: new device registers and scans **200** → revoke
+  **200** → same device scan **403 blocked** → photo upload **403 blocked** → a *different*
+  device still **200** → restore **200** → scan **200**. Retention: dry run listed 3 files and
+  deleted **none**, live purge removed exactly **3** files, all **3 rows survived with hashes
+  and metadata intact**, purged photo fetch returned **410** with `purgedAt`, re-run purged
+  **0** (idempotent), unauthenticated cron **307**. `hk:verify`: **17 pass · 2 partial ·
+  3 deferred · 0 fail**. Test data removed.
+
+**Cleared from the deferred ledger:** **D-02** (retention period), **D-09** (acceptance pass),
+**D-10** (device revocation) — bringing Phase 10 to **10/10**.
+
+**Honest limitation, documented in the UI:** the device id is a `localStorage` value the user
+can clear, so revocation stops casual reuse of a lost phone, not a determined actor. It is one
+signal among several — GPS, server time, dwell and photo hashing all apply independently.
+
+---
+
 ## Housekeeping — Client Cleaning Requests (Phase 9)
 
 **Requirement:** Clients scan an area QR, pick their company, and raise a cleaning request or

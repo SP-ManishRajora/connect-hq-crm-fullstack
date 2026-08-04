@@ -161,6 +161,18 @@ export default function SetupClient({
           >
             Client QR sheet
           </Link>
+          <Link
+            href="/housekeeping/setup/security"
+            className="rounded-md border px-4 py-2 text-sm whitespace-nowrap hover:bg-gray-50"
+          >
+            🔐 Security
+          </Link>
+          <Link
+            href="/housekeeping/setup/config"
+            className="rounded-md border px-4 py-2 text-sm whitespace-nowrap hover:bg-gray-50"
+          >
+            ⚙️ Settings
+          </Link>
         </div>
       </div>
       <p className="text-sm text-gray-500 mb-5">

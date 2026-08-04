@@ -31,6 +31,9 @@ function isPublic(pathname: string) {
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return true;
   if (pathname.startsWith("/qr/")) return true;
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) return true;
+  // PWA manifest must be fetchable without a session, or the browser never
+  // offers to install the app. It contains no sensitive data.
+  if (pathname === "/manifest.webmanifest") return true;
   if (pathname.startsWith("/uploads/")) return true;
   // Public static assets (logo etc.) served from /public — needed on the unauthenticated login page.
   if (pathname === "/logo.png") return true;

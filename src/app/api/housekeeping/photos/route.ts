@@ -12,6 +12,8 @@ import { isValidPhash, isNearDuplicate } from "@/lib/housekeeping/phash";
 import { VISIT_FLAGS } from "@/lib/housekeeping/types";
 import { mergeFlags } from "@/lib/housekeeping/verification";
 import { getHkConfig } from "@/lib/housekeeping/settings";
+import { assertDeviceAllowed } from "@/lib/housekeeping/devices";
+import { queuePhotoAnalysis } from "@/lib/housekeeping/ai/jobs";
 
 export const runtime = "nodejs";
 
@@ -54,6 +56,10 @@ export async function POST(req: NextRequest) {
     if (visit.status !== "SCANNED") {
       throw Object.assign(new Error("This location is already submitted"), { __status: 400 });
     }
+
+    // A revoked device must not be able to attach photos to a visit it opened
+    // before revocation.
+    await assertDeviceAllowed(u.id, (form.get("deviceId") as string) || null);
 
     const buf = Buffer.from(await file.arrayBuffer());
 
@@ -160,6 +166,11 @@ export async function POST(req: NextRequest) {
         data: { flags: mergeFlags(visit.flags, flags as any) },
       });
     }
+
+    // Phase 5 — queue analysis AFTER the photo is safely stored. queuePhotoAnalysis
+    // swallows its own errors: the evidence is already saved and an AI outage
+    // must never fail an upload (brief §6, acceptance #20).
+    await queuePhotoAnalysis(photo.id, visit.round.centerId);
 
     await logAction({
       userId: u.id,

@@ -7,6 +7,7 @@ import {
 } from "@/lib/housekeeping/route-helpers";
 import { transition, complaintReason, markComplaint, type CrStatus } from "@/lib/housekeeping/requests";
 import { getRequestConfig } from "@/lib/housekeeping/settings";
+import { verifyRequestCompletion, isStub } from "@/lib/housekeeping/ai";
 
 const schema = z.object({
   action: z.enum(["ASSIGN", "ACCEPT", "ON_THE_WAY", "START", "COMPLETE", "UNABLE", "CANCEL"]),
@@ -26,7 +27,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const r = await prisma.cleaningRequest.findUnique({
       where: { id: params.id },
-      include: { location: { select: { id: true, name: true } }, _count: { select: { photos: true } } },
+      include: {
+        location: { select: { id: true, name: true } },
+        type: { select: { requiresPhotos: true } },
+        _count: { select: { photos: true } },
+      },
     });
     if (!r) throw Object.assign(new Error("Request not found"), { __status: 404 });
     assertCenterAllowed(u, r.centerId);
@@ -90,9 +95,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           );
         }
 
-        if (r._count.photos === 0) {
+        // Brief §28 — at least one after photograph; serious request types may
+        // demand more (CleaningRequestType.requiresPhotos).
+        const needed = r.type?.requiresPhotos ?? 1;
+        const afterCount = await prisma.cleaningRequestPhoto.count({
+          where: { requestId: r.id, kind: "AFTER" },
+        });
+        if (afterCount < needed) {
           throw Object.assign(
-            new Error("Upload at least one after-cleaning photograph"),
+            new Error(
+              needed === 1
+                ? "Upload at least one after-cleaning photograph"
+                : `This request needs ${needed} after-cleaning photographs — ${afterCount} uploaded`,
+            ),
             { __status: 400 },
           );
         }
@@ -113,6 +128,39 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       note: b.note ?? (b.action === "UNABLE" ? "Unable to complete" : null),
       extra,
     });
+
+    // Brief §29 — AI verification of the after-photograph. ADVISORY ONLY: the
+    // completion has already been recorded above, and a negative verdict never
+    // reverses it. Wrapped so an AI outage cannot fail a completion.
+    let aiVerdict: { appearsCompleted: boolean; needsReview: boolean; comment: string | null } | null = null;
+    if (b.action === "COMPLETE" && !isStub()) {
+      try {
+        const v = await verifyRequestCompletion(r.id);
+        if (v) {
+          aiVerdict = {
+            appearsCompleted: v.value.appears_completed,
+            needsReview: Boolean(v.value.needs_supervisor_review) || !v.value.appears_completed,
+            comment: v.value.comment ?? null,
+          };
+          await logAction({
+            userId: u.id,
+            action: "HK_CLEANING_REQUEST_AI_VERIFIED",
+            targetType: "CleaningRequest",
+            targetId: r.id,
+            meta: {
+              ticketNo: r.ticketNo, model: v.info.model,
+              appearsCompleted: v.value.appears_completed,
+              confidence: v.value.confidence,
+              remainingIssues: v.value.remaining_issues,
+              // Recorded, not enforced — a human decides.
+              advisory: true,
+            },
+          });
+        }
+      } catch (e) {
+        console.error("AI verification failed (completion unaffected):", e);
+      }
+    }
 
     // A completion without a QR scan is worth a manager's attention.
     if (b.action === "COMPLETE" && !row.qrVerified) {
@@ -140,7 +188,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     });
 
-    return NextResponse.json({ ...row, convertedToComplaint: Boolean(reason) });
+    return NextResponse.json({ ...row, convertedToComplaint: Boolean(reason), aiVerdict });
   } catch (e) {
     return handleError(e);
   }

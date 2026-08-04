@@ -41,11 +41,13 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
       { mod: "hk_inspect", href: "/housekeeping/inspect", label: "Inspections", icon: "📸" },
       { mod: "hk_issues", href: "/housekeeping/issues", label: "Issues & Actions", icon: "🚨" },
       { mod: "hk_issues", href: "/housekeeping/tasks", label: "My Tasks", icon: "🧽" },
+      { mod: "hk_inspect", href: "/housekeeping/me", label: "My Performance", icon: "📊" },
       { mod: "hk_requests", href: "/housekeeping/requests", label: "Cleaning Requests", icon: "🧼" },
       { mod: "hk_generator", href: "/housekeeping/generator", label: "Generator", icon: "⚡" },
       { mod: "housekeeping", href: "/housekeeping/alerts", label: "Alerts", icon: "🔔" },
       { mod: "hk_reports", href: "/housekeeping/reports", label: "HK Reports", icon: "📋" },
       { mod: "hk_admin", href: "/housekeeping/setup", label: "HK Setup / QR", icon: "🔳" },
+      { mod: "housekeeping", href: "/housekeeping/api-docs", label: "API Reference", icon: "📘" },
     ]
   },
   {

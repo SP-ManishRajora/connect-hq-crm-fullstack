@@ -495,19 +495,125 @@ export async function buildReport(type: ReportType, f: ReportFilters): Promise<R
       };
     }
 
-    // ---------------------------------------------------------------- 16,17
-    case "ai-accuracy":
-    case "ai-correction":
+    // ---------------------------------------------------------------- 16
+    case "ai-accuracy": {
+      // How often the model was right, per model version. Only REVIEWED findings
+      // count — an unreviewed finding is not evidence either way, and including
+      // it would silently inflate whichever number you were hoping for.
+      const rows0 = await prisma.aiPhotoFinding.findMany({
+        where: {
+          analysedAt: { gte: from, lte: to },
+          ...(f.centerId ? { centerId: f.centerId } : {}),
+          driver: { not: "human" },
+        },
+        select: { model: true, driver: true, verdict: true, confidence: true, severity: true },
+      });
+
+      const byModel = new Map<string, typeof rows0>();
+      for (const r of rows0) {
+        const k = `${r.driver} / ${r.model}`;
+        byModel.set(k, [...(byModel.get(k) ?? []), r]);
+      }
+
+      const rows = [...byModel.entries()].map(([model, rs]) => {
+        const reviewed = rs.filter((r) => r.verdict !== "UNREVIEWED");
+        const accepted = reviewed.filter((r) => r.verdict === "ACCEPTED").length;
+        const corrected = reviewed.filter((r) => r.verdict === "CORRECTED").length;
+        const rejected = reviewed.filter((r) => r.verdict === "NOT_APPLICABLE").length;
+        const avgConf = rs.reduce((s, r) => s + r.confidence, 0) / (rs.length || 1);
+        return {
+          model,
+          total: rs.length,
+          reviewed: reviewed.length,
+          accepted,
+          corrected,
+          rejected,
+          accuracyPct: reviewed.length ? Math.round((accepted / reviewed.length) * 100) : "",
+          avgConfidence: num(avgConf * 100, 0),
+        };
+      });
+
+      // Findings a human added that the model never reported — its misses.
+      const missed = await prisma.aiPhotoFinding.count({
+        where: {
+          analysedAt: { gte: from, lte: to }, driver: "human", verdict: "ADDED",
+          ...(f.centerId ? { centerId: f.centerId } : {}),
+        },
+      });
+      if (missed > 0) {
+        rows.push({
+          model: "— missed by the model (added by staff)",
+          total: missed, reviewed: missed, accepted: 0, corrected: 0, rejected: 0,
+          accuracyPct: "", avgConfidence: "",
+        });
+      }
+
       return {
         title,
         columns: [
-          { key: "metric", label: "Metric" }, { key: "value", label: "Value" },
+          { key: "model", label: "Driver / model" },
+          { key: "total", label: "Findings" },
+          { key: "reviewed", label: "Reviewed" },
+          { key: "accepted", label: "Accepted" },
+          { key: "corrected", label: "Corrected" },
+          { key: "rejected", label: "Rejected" },
+          { key: "accuracyPct", label: "Accuracy %" },
+          { key: "avgConfidence", label: "Avg confidence %" },
         ],
-        rows: [],
-        note:
-          "No data yet — AI vision analysis is Phase 5. This report is listed so the menu matches " +
-          "the specification; it will populate once AI findings and user corrections are recorded.",
+        rows,
+        note: rows.length === 0
+          ? "No AI findings in this period. Analysis runs only when HK_AI_DRIVER is not \"stub\"."
+          : "Accuracy counts reviewed findings only — accepted ÷ reviewed. Unreviewed findings are excluded so the figure is not inflated.",
       };
+    }
+
+    // ---------------------------------------------------------------- 17
+    case "ai-correction": {
+      // The corrections themselves — what the model said versus what the
+      // supervisor said. This is the training signal the brief asks to retain.
+      const rows0 = await prisma.aiPhotoFinding.findMany({
+        where: {
+          analysedAt: { gte: from, lte: to },
+          verdict: { in: ["CORRECTED", "NOT_APPLICABLE", "ADDED"] },
+          ...(f.centerId ? { centerId: f.centerId } : {}),
+        },
+        orderBy: { reviewedAt: "desc" },
+        take: 500,
+        include: {
+          reviewedBy: { select: { name: true } },
+          photo: { select: { location: { select: { name: true, center: { select: { name: true } } } } } },
+        },
+      });
+
+      return {
+        title,
+        columns: [
+          { key: "when", label: "Reviewed" },
+          { key: "centre", label: "Centre" },
+          { key: "area", label: "Area" },
+          { key: "verdict", label: "Verdict" },
+          { key: "model", label: "Model" },
+          { key: "said", label: "Model said" },
+          { key: "actual", label: "Supervisor said" },
+          { key: "severityChange", label: "Severity" },
+          { key: "by", label: "Reviewed by" },
+        ],
+        rows: rows0.map((r) => ({
+          when: dt(r.reviewedAt),
+          centre: r.photo.location.center.name,
+          area: r.photo.location.name,
+          verdict: r.verdict === "NOT_APPLICABLE" ? "Rejected"
+            : r.verdict === "ADDED" ? "Model missed it" : "Corrected",
+          model: r.driver === "human" ? "—" : r.model,
+          said: r.driver === "human" ? "(nothing)" : r.issue,
+          actual: r.correctedIssue ?? (r.verdict === "ADDED" ? r.issue : r.verdict === "NOT_APPLICABLE" ? "(not a real issue)" : ""),
+          severityChange: r.correctedSeverity && r.correctedSeverity !== r.severity
+            ? `${r.severity} → ${r.correctedSeverity}` : r.severity,
+          by: r.reviewedBy?.name ?? "",
+        })),
+        note: "Every correction is retained for model evaluation (brief §6). The model's original wording is never overwritten.",
+      };
+    }
 
     // ---------------------------------------------------------------- 18
     case "centre-comparison": {

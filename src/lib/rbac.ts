@@ -44,9 +44,12 @@ export const MODULE_ACCESS: Record<string, Role[]> = {
   hk_inspect:     ["ADMIN", "OWNER", "OPS", "CENTER_MANAGER"],            // run rounds, scan, photos
   hk_issues:      ["ADMIN", "OWNER", "MANAGER", "OPS", "CENTER_MANAGER"], // issues + corrective actions
   hk_requests:    ["ADMIN", "OWNER", "MANAGER", "OPS", "CENTER_MANAGER"], // client cleaning requests
-  hk_generator:   ["ADMIN", "OWNER", "MANAGER", "OPS"],                   // generator ON/OFF, readings
+  hk_generator:   ["ADMIN", "OWNER", "MANAGER", "OPS", "CENTER_MANAGER"], // generator ON/OFF, readings
   hk_reports:     ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER"],
-  hk_admin:       ["ADMIN", "OWNER"],                                     // locations, QR, settings
+  // CENTER_MANAGER runs the day-to-day of a centre, so they get the full module —
+  // areas, QR codes, devices, retention and settings. Centre scoping still applies:
+  // they only ever see and administer their OWN centre (see route-helpers.centerScope).
+  hk_admin:       ["ADMIN", "OWNER", "CENTER_MANAGER"],                   // locations, QR, settings
 
   cashflow:     ["ADMIN"],
   audit_logs:   ["ADMIN", "OWNER"],

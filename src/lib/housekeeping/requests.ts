@@ -63,7 +63,13 @@ const URGENT_PATTERNS: { pattern: string; reason: string }[] = [
   { pattern: "smoke", reason: "safety risk" },
   { pattern: "fire", reason: "safety risk" },
   { pattern: "shock", reason: "electrical safety risk" },
-  { pattern: "meeting", reason: "client meeting in progress" },
+  // Deliberately specific: a bare "meeting" also matches "meeting room", which
+  // would escalate every routine meeting-room clean. The brief means a meeting
+  // that is happening NOW, so require a phrase that says so.
+  { pattern: "meeting in progress", reason: "client meeting in progress" },
+  { pattern: "meeting starting", reason: "client meeting in progress" },
+  { pattern: "guest arriving", reason: "client meeting in progress" },
+  { pattern: "client arriving", reason: "client meeting in progress" },
 ];
 
 export function detectUrgency(

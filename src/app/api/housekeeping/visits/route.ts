@@ -11,6 +11,7 @@ import { scanSchema } from "@/lib/housekeeping/validators";
 import { verifyScan, mergeFlags } from "@/lib/housekeeping/verification";
 import { getHkConfig } from "@/lib/housekeeping/settings";
 import { anglesForCategory, parseJsonArray } from "@/lib/housekeeping/types";
+import { assertDeviceAllowed, touchDevice } from "@/lib/housekeeping/devices";
 
 // POST /api/housekeeping/visits — scan a location QR and open a visit.
 //
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = parseBody(scanSchema, await req.json());
+
+    // Phase 10 — a revoked device is refused before anything is written, so a
+    // rejected scan leaves no partial visit behind.
+    await assertDeviceAllowed(u.id, body.deviceId);
+
     const cfg = await getHkConfig();
 
     const round = await prisma.inspectionRound.findUnique({
@@ -127,13 +133,8 @@ export async function POST(req: NextRequest) {
       });
 
       // Track the device so rapid switching is detectable across rounds.
-      if (body.deviceId) {
-        await prisma.deviceRegistration.upsert({
-          where: { userId_deviceId: { userId: u.id, deviceId: body.deviceId } },
-          create: { userId: u.id, deviceId: body.deviceId },
-          update: { lastSeenAt: new Date() },
-        });
-      }
+      // touchDevice never clears `revokedAt` — re-registering cannot undo a revocation.
+      if (body.deviceId) await touchDevice(u.id, body.deviceId);
 
       await logAction({
         userId: u.id,

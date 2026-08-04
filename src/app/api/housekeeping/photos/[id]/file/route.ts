@@ -28,9 +28,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const photo = await prisma.inspectionPhoto.findUnique({
     where: { id: params.id },
-    select: { filePath: true, mimeType: true, location: { select: { centerId: true } } },
+    select: {
+      filePath: true, mimeType: true, purgedAt: true,
+      location: { select: { centerId: true } },
+    },
   });
   if (!photo) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // 410 Gone, not 404 — the record exists, the bytes were removed by policy.
+  if (photo.purgedAt) {
+    return NextResponse.json(
+      {
+        error: "This photograph was removed under the data-retention policy.",
+        purgedAt: photo.purgedAt,
+      },
+      { status: 410 },
+    );
+  }
 
   // Centre scoping — a centre manager may only view their own centre's evidence.
   if (u.role !== "ADMIN" && u.role !== "OWNER" && u.centerId && photo.location.centerId !== u.centerId) {

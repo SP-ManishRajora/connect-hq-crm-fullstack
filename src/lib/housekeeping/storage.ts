@@ -9,7 +9,7 @@
 // implemented today and the interface is kept narrow so a swap stays contained.
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { mkdir, writeFile, readFile, unlink, stat } from "fs/promises";
 import path from "path";
 
 const ROOT =
@@ -79,6 +79,26 @@ export async function readPhoto(relPath: string): Promise<Buffer> {
     throw new Error("invalid photo path");
   }
   return readFile(full);
+}
+
+// Deletes one stored file. Used ONLY by the retention job — the database row,
+// its AI findings and the audit trail always survive; only the bytes go.
+// Returns the freed byte count, or 0 when the file was already absent.
+export async function deletePhotoFile(relPath: string): Promise<number> {
+  const full = path.resolve(ROOT, relPath);
+  const rootResolved = path.resolve(ROOT);
+  // Refuse anything that escapes ROOT — a malformed path must never delete
+  // outside the upload directory.
+  if (full !== rootResolved && !full.startsWith(rootResolved + path.sep)) {
+    throw new Error("invalid photo path");
+  }
+  try {
+    const s = await stat(full);
+    await unlink(full);
+    return s.size;
+  } catch {
+    return 0; // already gone — idempotent
+  }
 }
 
 // --- Signed URLs -----------------------------------------------------------

@@ -93,7 +93,10 @@ export default async function HousekeepingDashboard() {
                 {stats.centres.map((c) => (
                   <tr key={c.centerId}>
                     <td className="py-2">
-                      <div className="font-medium">{c.centre}</div>
+                      <Link href={`/housekeeping/centre/${c.centerId}`}
+                        className="font-medium text-brand-600 hover:underline">
+                        {c.centre}
+                      </Link>
                       <div className="text-xs text-gray-500">
                         {c.areas} areas
                         {c.generatorsRunning > 0 && (

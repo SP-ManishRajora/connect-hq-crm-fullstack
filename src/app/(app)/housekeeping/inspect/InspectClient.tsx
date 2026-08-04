@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import QrScanner from "./QrScanner";
+import AiReview from "./AiReview";
 import { getDeviceId, getPosition, analyseImage, type Fix } from "@/lib/housekeeping/client-capture";
 import { FLAG_LABELS } from "@/lib/housekeeping/types";
 
@@ -462,6 +463,12 @@ export default function InspectClient({
                   )}
                 </div>
               ))}
+
+              {/* ---- AI findings review (Phase 5) ---- */}
+              <AiReview
+                visitId={visit!.id}
+                photoIds={slots.filter((s) => s.photoId).map((s) => s.photoId!) as string[]}
+              />
 
               {/* ---- raise an issue for this area ---- */}
               <div className="rounded-xl border bg-white p-4">
