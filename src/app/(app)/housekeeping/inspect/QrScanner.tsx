@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
 
-// QR scanning via the native BarcodeDetector API — no library dependency.
-// Chrome/Edge on Android support it; iOS Safari does not, so a manual code entry
-// is always offered rather than leaving those users stuck.
+// QR scanning uses the native BarcodeDetector API where available (Chrome/Edge on
+// Android, ChromeOS). Everywhere else — desktop Chrome on Linux/Windows, iOS Safari —
+// it is absent, so we decode camera frames with jsQR on a canvas instead. Manual code
+// entry stays available as the last resort (no camera, permission denied).
 type Detector = { detect: (s: CanvasImageSource) => Promise<{ rawValue: string }[]> };
 
 declare global {
@@ -20,65 +22,160 @@ export default function QrScanner({
   onCancel: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const doneRef = useRef(false);
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
 
-  const [supported, setSupported] = useState<boolean | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manual, setManual] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
-    async function start() {
-      const hasDetector = typeof window !== "undefined" && !!window.BarcodeDetector;
-      setSupported(hasDetector);
-      if (!hasDetector) return;
+    function stop() {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
 
+    // QR may hold a full URL (/qr/<code>) or the bare code; accept either.
+    function extractCode(v: string): string {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-
-        const detector = new window.BarcodeDetector!({ formats: ["qr_code"] });
-
-        const tick = async () => {
-          if (doneRef.current || cancelled || !videoRef.current) return;
-          try {
-            const hits = await detector.detect(videoRef.current);
-            const value = hits[0]?.rawValue?.trim();
-            if (value) {
-              doneRef.current = true;
-              stop();
-              onScan(extractCode(value));
-              return;
-            }
-          } catch {
-            // transient decode failure — keep scanning
-          }
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
+        const u = new URL(v);
+        const parts = u.pathname.split("/").filter(Boolean);
+        return parts[parts.length - 1] || v;
       } catch {
-        setError("Camera permission denied. Enter the code printed under the QR instead.");
+        return v;
       }
     }
 
-    function stop() {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+    function hit(raw: string) {
+      doneRef.current = true;
+      stop();
+      onScanRef.current(extractCode(raw.trim()));
+    }
+
+    // jsQR fallback: draw the current frame to an offscreen canvas and decode.
+    function decodeFrame(video: HTMLVideoElement): string | null {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return null;
+
+      let canvas = canvasRef.current;
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvasRef.current = canvas;
+      }
+      // Cap the decode resolution — full-res frames cost far more per tick without
+      // improving the read on a wall-mounted code.
+      const scale = Math.min(1, 640 / Math.max(w, h));
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const found = jsQR(data.data, data.width, data.height, {
+        inversionAttempts: "dontInvert",
+      });
+      return found?.data ?? null;
+    }
+
+    // Poll the ref across animation frames until React has mounted the <video>.
+    // Bounded so a render that never happens can't spin forever.
+    function waitForVideo(): Promise<HTMLVideoElement | null> {
+      return new Promise((resolve) => {
+        let tries = 0;
+        const look = () => {
+          if (cancelled) return resolve(null);
+          if (videoRef.current) return resolve(videoRef.current);
+          if (++tries > 60) return resolve(null);
+          requestAnimationFrame(look);
+        };
+        look();
+      });
+    }
+
+    function waitForDimensions(video: HTMLVideoElement): Promise<void> {
+      return new Promise((resolve) => {
+        let tries = 0;
+        const look = () => {
+          if (cancelled || video.videoWidth > 0 || ++tries > 60) return resolve();
+          requestAnimationFrame(look);
+        };
+        look();
+      });
+    }
+
+    async function start() {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        setError(
+          "This browser can't use the camera here. Type the code printed under the QR instead.",
+        );
+        return;
+      }
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+      } catch {
+        setError(
+          "Camera unavailable or permission denied. Type the code printed under the QR instead.",
+        );
+        return;
+      }
+
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      streamRef.current = stream;
+      setScanning(true);
+
+      // The <video> only mounts once `scanning` flips true, so the ref is still null
+      // on this synchronous pass — wait for the element to exist before attaching.
+      const video = await waitForVideo();
+      if (!video || cancelled) return;
+      video.srcObject = stream;
+      try {
+        await video.play();
+      } catch {
+        // autoplay rejection — the frame loop below still reads whatever renders
+      }
+      // jsQR needs real pixel dimensions; on a cold start they are 0 for a few frames.
+      await waitForDimensions(video);
+      if (cancelled) return;
+
+      const detector = window.BarcodeDetector
+        ? new window.BarcodeDetector({ formats: ["qr_code"] })
+        : null;
+
+      const tick = async () => {
+        if (doneRef.current || cancelled || !videoRef.current) return;
+        try {
+          if (detector) {
+            const hits = await detector.detect(videoRef.current);
+            const value = hits[0]?.rawValue?.trim();
+            if (value) return hit(value);
+          } else {
+            const value = decodeFrame(videoRef.current);
+            if (value) return hit(value);
+          }
+        } catch {
+          // transient decode failure — keep scanning
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
     }
 
     start();
@@ -86,25 +183,20 @@ export default function QrScanner({
       cancelled = true;
       stop();
     };
-  }, [onScan]);
-
-  // QR may hold a full URL (/qr/<code>) or the bare code; accept either.
-  function extractCode(v: string): string {
-    try {
-      const u = new URL(v);
-      const parts = u.pathname.split("/").filter(Boolean);
-      return parts[parts.length - 1] || v;
-    } catch {
-      return v;
-    }
-  }
+  }, []);
 
   return (
     <div className="rounded-xl border bg-white overflow-hidden">
-      {supported && !error && (
-        <div className="relative bg-black">
-          <video ref={videoRef} playsInline muted className="w-full max-h-[60vh] object-cover" />
-          {/* framing guide */}
+      {scanning && (
+        <div className="relative bg-black overflow-hidden">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            className="w-full max-h-[60vh] object-cover"
+          />
+          {/* framing guide — the dimming spread is clipped by the parent's overflow-hidden */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="w-56 h-56 border-4 border-white/80 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
           </div>
@@ -116,12 +208,6 @@ export default function QrScanner({
 
       <div className="p-4 space-y-3">
         {error && <div className="text-sm text-rose-700 bg-rose-50 rounded-md p-3">{error}</div>}
-        {supported === false && (
-          <div className="text-sm text-amber-800 bg-amber-50 rounded-md p-3">
-            This browser can&apos;t scan QR codes directly (common on iPhone). Use your phone&apos;s
-            camera app to open the QR link, or type the code printed under it.
-          </div>
-        )}
 
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
