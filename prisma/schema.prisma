@@ -2035,7 +2035,9 @@ model HkStaff {
   shiftStart String  @default("08:00")
   shiftEnd   String  @default("20:00")
   // Days worked, 0=Sunday … 6=Saturday. Default: every day.
-  workDays   String  @default("[0,1,2,3,4,5,6]") @db.Text
+  // VARCHAR, not TEXT: MySQL forbids a default on a TEXT column, and a
+  // seven-element day list never approaches the 191-char limit.
+  workDays   String  @default("[0,1,2,3,4,5,6]") @db.VarChar(64)
 
   // How much work this person can reasonably hold at once. Used to normalise
   // the efficiency score so someone covering a busy floor is not penalised for
