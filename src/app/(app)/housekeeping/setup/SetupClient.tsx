@@ -116,7 +116,10 @@ export default function SetupClient({
     try {
       const r = await fetch(`/api/housekeeping/locations/${id}/qr`, { method: "POST" });
       if (!r.ok) throw new Error((await r.json()).error);
-      setMsg({ kind: "ok", text: `New QR generated for ${name} — reprint it.` });
+      setMsg({
+        kind: "ok",
+        text: `New QR generated for ${name} — use Print on its row to reprint it.`,
+      });
       await reload(centerId);
     } catch (e: any) {
       setMsg({ kind: "err", text: e.message });
@@ -285,6 +288,17 @@ export default function SetupClient({
                     >
                       New QR
                     </button>
+                    {l.qrCodes[0] && (
+                      <a
+                        href={`/housekeeping/setup/qr-sheet?centerId=${centerId}&locationId=${l.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                        title={`Print just the QR for ${l.name}`}
+                      >
+                        Print
+                      </a>
+                    )}
                     <button
                       onClick={() => patch(l.id, { active: !l.active })}
                       disabled={busy === l.id}

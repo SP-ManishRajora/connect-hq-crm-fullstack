@@ -23,7 +23,7 @@ function scanUrl(code: string) {
 export default async function QrSheetPage({
   searchParams,
 }: {
-  searchParams: { centerId?: string };
+  searchParams: { centerId?: string; locationId?: string };
 }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
@@ -38,8 +38,15 @@ export default async function QrSheetPage({
   });
   if (!center) redirect("/housekeeping/setup");
 
+  // A locationId narrows the sheet to one area — used by the per-row Print action so
+  // a rotated code can be reprinted without reprinting the whole centre. Paused areas
+  // are still printable when asked for by id; the unfiltered sheet stays active-only.
+  const single = searchParams.locationId;
+
   const locations = await prisma.inspectionLocation.findMany({
-    where: { centerId, deletedAt: null, active: true },
+    where: single
+      ? { id: single, centerId, deletedAt: null }
+      : { centerId, deletedAt: null, active: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: {
       qrCodes: { where: { active: true }, select: { code: true, version: true }, take: 1 },
@@ -78,10 +85,24 @@ export default async function QrSheetPage({
 
       <div className="no-print mb-5 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">QR Sheet — {center.name}</h1>
+          <h1 className="text-2xl font-semibold">
+            {single && cards[0] ? `QR — ${cards[0].name}` : `QR Sheet — ${center.name}`}
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {cards.length} code{cards.length === 1 ? "" : "s"}. Print, cut, and fix each one at its
-            area. Reprint whenever a code is rotated.
+            {single ? (
+              <>
+                Single area at {center.name}. Print, cut, and fix it at the area.{" "}
+                <a href={`/housekeeping/setup/qr-sheet?centerId=${center.id}`} className="underline">
+                  Print the whole centre instead
+                </a>
+                .
+              </>
+            ) : (
+              <>
+                {cards.length} code{cards.length === 1 ? "" : "s"}. Print, cut, and fix each one at
+                its area. Reprint whenever a code is rotated.
+              </>
+            )}
           </p>
         </div>
         <PrintButton />
@@ -89,11 +110,17 @@ export default async function QrSheetPage({
 
       {cards.length === 0 && (
         <div className="no-print rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No active QR codes for this centre yet. Generate them from the setup screen.
+          {single
+            ? "This area has no active QR code. Generate one with New QR on the setup screen."
+            : "No active QR codes for this centre yet. Generate them from the setup screen."}
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div
+        className={
+          single ? "max-w-[280px]" : "grid grid-cols-2 md:grid-cols-3 gap-4"
+        }
+      >
         {cards.map((c) => (
           <div key={c.id} className="qr-card rounded-lg border bg-white p-4 text-center">
             <div className="text-xs uppercase tracking-wider text-gray-500">{center.name}</div>
