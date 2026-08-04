@@ -115,23 +115,50 @@ export default function QrScanner({
 
     async function start() {
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        // getUserMedia is absent entirely on insecure origins — the usual cause is the
+        // page being served over plain http:// rather than the browser lacking support.
+        const insecure =
+          typeof window !== "undefined" &&
+          !window.isSecureContext &&
+          window.location.protocol !== "https:";
         setError(
-          "This browser can't use the camera here. Type the code printed under the QR instead.",
+          insecure
+            ? "The camera needs a secure (https://) connection. Open this page over https, or type the code printed under the QR."
+            : "This browser can't use the camera here. Type the code printed under the QR instead.",
         );
         return;
       }
 
+      // Prefer the rear camera, but some devices reject an exact facingMode outright
+      // (OverconstrainedError) instead of picking a fallback — so retry unconstrained
+      // rather than telling the user their camera is unavailable.
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
+          video: { facingMode: { ideal: "environment" } },
           audio: false,
         });
-      } catch {
-        setError(
-          "Camera unavailable or permission denied. Type the code printed under the QR instead.",
-        );
-        return;
+      } catch (e: unknown) {
+        const name = (e as { name?: string })?.name ?? "";
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setError(
+            "Camera permission is blocked for this site. Allow it from the padlock icon in the address bar, then reload — or type the code printed under the QR.",
+          );
+          return;
+        }
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (e2: unknown) {
+          const n2 = (e2 as { name?: string })?.name ?? "";
+          setError(
+            n2 === "NotReadableError"
+              ? "The camera is in use by another app. Close it and reload, or type the code printed under the QR."
+              : n2 === "NotFoundError"
+                ? "No camera found on this device. Type the code printed under the QR instead."
+                : "Couldn't start the camera. Type the code printed under the QR instead.",
+          );
+          return;
+        }
       }
 
       if (cancelled) {
