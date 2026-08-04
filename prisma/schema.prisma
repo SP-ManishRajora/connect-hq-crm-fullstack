@@ -2055,3 +2055,32 @@ model HkStaff {
 
   @@index([centerId, active])
 }
+
+// ============================================================================
+// CUSTOM ROLES
+// ============================================================================
+//
+// Roles were hard-coded in src/lib/rbac.ts, so adding one meant a code change
+// and a deploy — and a role created by any other route (EMPLOYEE, found in the
+// live data) silently resolved to NO access at all.
+//
+// This table makes roles data. The nine original roles are seeded as
+// `builtIn: true` and cannot be deleted, so nobody can remove ADMIN and lock
+// everyone out. rbac.ts still holds the built-in defaults, which act as the
+// fallback whenever the database is unreachable.
+model AppRole {
+  id          String   @id @default(cuid())
+  // The value stored on User.role. Uppercase, no spaces — it is an identifier.
+  key         String   @unique
+  label       String
+  description String?  @db.Text
+  // JSON array of module keys from MODULE_ACCESS.
+  modules     String   @db.Text
+  // Seeded roles: renameable and editable, but never deletable.
+  builtIn     Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active])
+}

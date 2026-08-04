@@ -2,13 +2,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/utils";
+import RolesTab from "./RolesTab";
 
-const ROLES = ["ADMIN", "OWNER", "MANAGER", "SALES", "OPS", "CENTER_MANAGER", "ACCOUNTS", "IT", "CLIENT"];
+// Fallback only. The real list comes from the AppRole table via props, so a
+// role created in the Roles tab shows up here without a code change.
+const FALLBACK_ROLES = ["ADMIN", "OWNER", "MANAGER", "SALES", "OPS", "CENTER_MANAGER", "ACCOUNTS", "IT", "CLIENT"];
 const EMPTY = { name: "", email: "", password: "", role: "SALES", centerId: "", phone: "" };
 
-export default function UsersClient({ users, centers, invites = [], resets = [], allModules = [], defaultByRole = {} }: any) {
+export default function UsersClient({ users, centers, invites = [], resets = [], allModules = [], defaultByRole = {}, roles = [] }: any) {
+  const ROLES: string[] = roles.length ? roles.map((r: any) => r.key) : FALLBACK_ROLES;
+  const roleLabel = (key: string) =>
+    roles.find((r: any) => r.key === key)?.label ?? key;
   const router = useRouter();
-  const [tab, setTab] = useState<"USERS" | "INVITES" | "RESETS">("USERS");
+  const [tab, setTab] = useState<"USERS" | "INVITES" | "RESETS" | "ROLES">("USERS");
 
   // ---- Create / edit user (existing functionality, preserved) ----
   const [show, setShow] = useState(false);
@@ -147,6 +153,7 @@ export default function UsersClient({ users, centers, invites = [], resets = [],
         <button onClick={() => setTab("USERS")} className={`px-4 py-2 text-sm border-b-2 ${tab === "USERS" ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}>Users ({users.length})</button>
         <button onClick={() => setTab("INVITES")} className={`px-4 py-2 text-sm border-b-2 ${tab === "INVITES" ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}>Invites ({invites.length})</button>
         <button onClick={() => setTab("RESETS")} className={`px-4 py-2 text-sm border-b-2 ${tab === "RESETS" ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}>Password Resets ({resets.filter((r: any) => r.status === "PENDING").length} pending)</button>
+        <button onClick={() => setTab("ROLES")} className={`px-4 py-2 text-sm border-b-2 ${tab === "ROLES" ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500"}`}>Roles ({roles.length})</button>
       </div>
 
       {/* Create / edit user form */}
@@ -292,6 +299,9 @@ export default function UsersClient({ users, centers, invites = [], resets = [],
           </table>
         </div>
       )}
+
+      {/* ROLES tab — create and edit custom roles */}
+      {tab === "ROLES" && <RolesTab />}
 
       {/* Modules editor modal */}
       {editModFor && (

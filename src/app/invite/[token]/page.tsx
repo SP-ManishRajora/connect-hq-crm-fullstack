@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function AcceptInvitePage({ params }: { params: { token: string } }) {
   const router = useRouter();
@@ -38,8 +39,8 @@ export default function AcceptInvitePage({ params }: { params: { token: string }
         <h1 className="h1">Welcome, {info.name}!</h1>
         <p className="muted">You've been invited as <strong>{info.role}</strong>. Set your password to activate.</p>
         <div><label className="label">Email</label><input className="input" disabled value={info.email} /></div>
-        <div><label className="label">New password (min 6 chars) *</label><input className="input" required type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
-        <div><label className="label">Confirm password *</label><input className="input" required type="password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} /></div>
+        <div><label className="label">New password (min 6 chars) *</label><PasswordInput value={form.password} onChange={(v) => setForm({ ...form, password: v })} required autoComplete="new-password" /></div>
+        <div><label className="label">Confirm password *</label><PasswordInput value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} required autoComplete="new-password" /></div>
         <div className="grid grid-cols-2 gap-2">
           <div><label className="label">Phone</label><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
           <div><label className="label">Designation</label><input className="input" value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} /></div>

@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function ResetPasswordPage() {
   return (
@@ -70,8 +71,8 @@ function ResetPasswordForm() {
 
         {state === "valid" && (
           <form onSubmit={submit} className="card space-y-4">
-            <div><label className="label">New password</label><input className="input" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 8 chars, letters + numbers" /></div>
-            <div><label className="label">Confirm password</label><input className="input" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
+            <div><label className="label">New password</label><PasswordInput value={password} onChange={setPassword} required placeholder="Min 8 chars, letters + numbers" autoComplete="new-password" /></div>
+            <div><label className="label">Confirm password</label><PasswordInput value={confirm} onChange={setConfirm} required autoComplete="new-password" /></div>
             {err && <p className="text-red-600 text-sm">{err}</p>}
             <button className="btn-primary w-full" disabled={loading}>{loading ? "Saving…" : "Update password"}</button>
           </form>

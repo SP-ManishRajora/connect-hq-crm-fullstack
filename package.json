@@ -13,6 +13,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:hk": "tsx prisma/seed-housekeeping.ts",
     "db:seed:cr": "tsx prisma/seed-cleaning-requests.ts",
+    "db:seed:roles": "tsx prisma/seed-roles.ts",
     "hk:verify": "tsx prisma/verify-acceptance.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "db:studio": "prisma studio",

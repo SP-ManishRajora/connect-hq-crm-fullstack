@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import UsersClient from "./UsersClient";
+import { listRoles } from "@/lib/roles";
 import { getSessionUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { ALL_MODULES, MODULE_ACCESS } from "@/lib/rbac";
@@ -19,6 +20,9 @@ export default async function Page() {
     prisma.userInvite.findMany({ orderBy: { createdAt: "desc" }, include: { invitedBy: { select: { name: true } } } }),
     prisma.passwordResetRequest.findMany({ orderBy: { createdAt: "desc" }, take: 30, include: { user: { select: { name: true, email: true } } } }),
   ]);
+  // Roles come from the AppRole table so a custom role appears in the dropdown.
+  const roles = await listRoles();
+
   return (
     <UsersClient
       users={JSON.parse(JSON.stringify(users))}
@@ -27,6 +31,7 @@ export default async function Page() {
       resets={JSON.parse(JSON.stringify(resets))}
       allModules={ALL_MODULES}
       defaultByRole={MODULE_ACCESS}
+      roles={roles}
     />
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function RegisterPage() {
   return (
@@ -80,8 +81,8 @@ function RegisterForm() {
             {company && <p className="text-sm muted">Joining <strong>{company}</strong></p>}
             <div><label className="label">Email</label><input className="input bg-gray-50" value={email} disabled /></div>
             <div><label className="label">Full name</label><input className="input" required value={name} onChange={(e) => setName(e.target.value)} /></div>
-            <div><label className="label">Password</label><input className="input" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 8 chars, letters + numbers" /></div>
-            <div><label className="label">Confirm password</label><input className="input" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
+            <div><label className="label">Password</label><PasswordInput value={password} onChange={setPassword} required placeholder="Min 8 chars, letters + numbers" autoComplete="new-password" /></div>
+            <div><label className="label">Confirm password</label><PasswordInput value={confirm} onChange={setConfirm} required autoComplete="new-password" /></div>
             {err && <p className="text-red-600 text-sm">{err}</p>}
             <button className="btn-primary w-full" disabled={loading}>{loading ? "Creating…" : "Create account"}</button>
           </form>
