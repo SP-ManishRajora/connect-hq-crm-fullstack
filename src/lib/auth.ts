@@ -79,7 +79,14 @@ export async function verifyToken(token: string): Promise<SessionUser | null> {
 }
 
 export async function loginByEmail(email: string, password: string) {
-  const user = await prisma.user.findUnique({ where: { email } });
+  // Email addresses are not case-sensitive, and people do not remember the casing
+  // they were registered with. New rows are stored lowercased; the second lookup
+  // covers rows created before that, which would otherwise only accept the exact
+  // capitalisation an admin happened to type.
+  const normalised = String(email ?? "").trim().toLowerCase();
+  const user =
+    (await prisma.user.findUnique({ where: { email: normalised } })) ??
+    (await prisma.user.findFirst({ where: { email: String(email ?? "").trim() } }));
   if (!user || !user.active) return null;
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) return null;

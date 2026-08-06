@@ -2,8 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser, hashPassword } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
+import { listRoles } from "@/lib/roles";
 
-const ROLES = ["ADMIN", "OWNER", "MANAGER", "SALES", "OPS", "CENTER_MANAGER", "ACCOUNTS", "IT", "CLIENT"];
+// Roles are data (the AppRole table), not a fixed list — the roles admin screen
+// can add them. A hardcoded array here silently rejects every custom role, so a
+// user on HOUSEKEEPING or EMPLOYEE could not be saved at all. Fall back to the
+// built-in set only when the table is unreachable.
+const BUILT_IN_ROLES = ["ADMIN", "OWNER", "MANAGER", "SALES", "OPS", "CENTER_MANAGER", "ACCOUNTS", "IT", "CLIENT"];
+
+async function isKnownRole(role: string): Promise<boolean> {
+  try {
+    const rows = await listRoles();
+    if (rows.length) return rows.some((r) => r.key === role);
+  } catch {
+    // fall through to the built-ins below
+  }
+  return BUILT_IN_ROLES.includes(role);
+}
 
 // PATCH — edit a user's details (Admin/Owner only). Password is only changed
 // when a non-empty `password` is supplied; otherwise it is left untouched.
@@ -30,15 +45,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
     }
-    if (email !== target.email) {
-      const clash = await prisma.user.findUnique({ where: { email } });
+    // Compare case-insensitively against the STORED value. Older rows were saved
+    // with the address as typed ("Dablu@…"), so comparing a lowercased submission
+    // against them reads as a change even when the user edited nothing — the
+    // lookup then finds their own row and reports it as taken.
+    //
+    // Excluding `params.id` is the real guard: it means a genuine clash can only
+    // ever be a DIFFERENT user, whatever the casing on either side.
+    if (email !== target.email.toLowerCase()) {
+      const clash = await prisma.user.findFirst({
+        where: { email, NOT: { id: params.id } },
+        select: { id: true },
+      });
       if (clash) return NextResponse.json({ error: "Email already in use" }, { status: 400 });
     }
     data.email = email;
   }
 
   if (b.role !== undefined) {
-    if (!ROLES.includes(b.role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    if (!(await isKnownRole(b.role))) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
     // Guard: an admin cannot demote themselves out of ADMIN (avoids self-lockout).
     if (me.id === params.id && target.role === "ADMIN" && b.role !== "ADMIN") {
       return NextResponse.json({ error: "You cannot change your own admin role" }, { status: 400 });
