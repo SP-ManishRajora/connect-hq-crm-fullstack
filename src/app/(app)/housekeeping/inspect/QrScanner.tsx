@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
+import { extractCode } from "@/lib/housekeeping/qr-code";
 
 // QR scanning uses the native BarcodeDetector API where available (Chrome/Edge on
 // Android, ChromeOS). Everywhere else — desktop Chrome on Linux/Windows, iOS Safari —
@@ -41,17 +42,6 @@ export default function QrScanner({
       rafRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
-    }
-
-    // QR may hold a full URL (/qr/<code>) or the bare code; accept either.
-    function extractCode(v: string): string {
-      try {
-        const u = new URL(v);
-        const parts = u.pathname.split("/").filter(Boolean);
-        return parts[parts.length - 1] || v;
-      } catch {
-        return v;
-      }
     }
 
     function hit(raw: string) {

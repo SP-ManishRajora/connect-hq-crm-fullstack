@@ -39,6 +39,12 @@ export async function GET(req: NextRequest) {
           select: { id: true, code: true, version: true },
           take: 1,
         },
+        // Both halves of the area's single sticker — setup shows when one is missing.
+        clientQrCodes: {
+          where: { active: true },
+          select: { id: true, code: true, version: true },
+          take: 1,
+        },
       },
     });
 

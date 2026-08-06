@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function RequestsPage({
   searchParams,
 }: {
-  searchParams: { centerId?: string };
+  searchParams: { centerId?: string; focus?: string; code?: string };
 }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
@@ -33,7 +33,20 @@ export default async function RequestsPage({
     );
   }
 
-  const centerId = searchParams.centerId || centers[0].id;
+  // Arriving from an area sticker with ?focus=<requestId> and no centreId: load the
+  // centre that request actually belongs to, or its row would be missing from the
+  // list. Constrained to centres this user may already see, so the focus parameter
+  // cannot widen access.
+  const allowed = new Set(centers.map((c) => c.id));
+  const focused = searchParams.focus
+    ? await prisma.cleaningRequest.findUnique({
+        where: { id: searchParams.focus },
+        select: { id: true, centerId: true },
+      })
+    : null;
+  const focusCenterId = focused && allowed.has(focused.centerId) ? focused.centerId : null;
+
+  const centerId = searchParams.centerId || focusCenterId || centers[0].id;
 
   const [requests, staff] = await Promise.all([
     prisma.cleaningRequest.findMany({
@@ -67,6 +80,10 @@ export default async function RequestsPage({
       meRole={me.role}
       centers={centers}
       initialCenterId={centerId}
+      // Handed over from the area sticker: open this request and prefill the code
+      // that was scanned, so completion is one tap rather than a second hunt.
+      focusId={focusCenterId ? focused!.id : null}
+      scannedCode={searchParams.code ?? null}
     />
   );
 }

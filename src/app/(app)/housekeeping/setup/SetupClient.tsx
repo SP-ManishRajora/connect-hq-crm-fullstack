@@ -10,6 +10,7 @@ type Loc = {
   active: boolean;
   center: { id: string; name: string };
   qrCodes: { id: string; code: string; version: number }[];
+  clientQrCodes?: { id: string; code: string; version: number }[];
 };
 type Center = { id: string; name: string; city: string };
 
@@ -57,8 +58,12 @@ export default function SetupClient({
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
-      // Mint a QR immediately — a location with no code can't be inspected.
-      await fetch(`/api/housekeeping/locations/${j.id}/qr`, { method: "POST" });
+      // Mint both codes immediately — a location with no staff code can't be
+      // inspected, and with no area code its sticker can't be printed.
+      await Promise.all([
+        fetch(`/api/housekeeping/locations/${j.id}/qr`, { method: "POST" }),
+        fetch(`/api/housekeeping/locations/${j.id}/client-qr`, { method: "POST" }),
+      ]);
       setForm({ name: "", category: "OTHER" });
       setAdding(false);
       setMsg({ kind: "ok", text: `Added "${j.name}" and generated its QR code.` });
@@ -110,15 +115,23 @@ export default function SetupClient({
     }
   }
 
+  // One sticker per area means both codes rotate together. Rotating only one would
+  // leave a printout that half-works — the wall label would still resolve for one
+  // audience and dead-end for the other, which is exactly the confusion the single
+  // sticker removes.
   async function rotateQr(id: string, name: string) {
     if (!confirm(`Generate a new QR code for "${name}"?\n\nThe existing printout will stop working and must be replaced.`)) return;
     setBusy(id);
     try {
-      const r = await fetch(`/api/housekeeping/locations/${id}/qr`, { method: "POST" });
-      if (!r.ok) throw new Error((await r.json()).error);
+      const [staff, client] = await Promise.all([
+        fetch(`/api/housekeeping/locations/${id}/qr`, { method: "POST" }),
+        fetch(`/api/housekeeping/locations/${id}/client-qr`, { method: "POST" }),
+      ]);
+      if (!staff.ok) throw new Error((await staff.json()).error);
+      if (!client.ok) throw new Error((await client.json()).error);
       setMsg({
         kind: "ok",
-        text: `New QR generated for ${name} — use Print on its row to reprint it.`,
+        text: `New QR generated for ${name} — use Print on its row to reprint the sticker.`,
       });
       await reload(centerId);
     } catch (e: any) {
@@ -150,16 +163,17 @@ export default function SetupClient({
         <h1 className="text-2xl font-semibold">🔳 Housekeeping Setup</h1>
         <div className="flex gap-2">
           <Link
-            href={`/housekeeping/setup/qr-sheet?centerId=${centerId}`}
+            href={`/housekeeping/setup/client-qr-sheet?centerId=${centerId}`}
             className="rounded-md bg-brand-600 px-4 py-2 text-sm text-white whitespace-nowrap"
           >
-            Staff QR sheet
+            Area QR sheet
           </Link>
           <Link
-            href={`/housekeeping/setup/client-qr-sheet?centerId=${centerId}`}
+            href={`/housekeeping/setup/qr-sheet?centerId=${centerId}`}
             className="rounded-md border px-4 py-2 text-sm whitespace-nowrap hover:bg-gray-50"
+            title="Staff copy — same destination, prints the code for manual entry"
           >
-            Client QR sheet
+            Staff copy
           </Link>
           <Link
             href="/housekeeping/setup/security"
@@ -277,8 +291,14 @@ export default function SetupClient({
                 <td className="px-4 py-2">{l.requiredPhotoCount}</td>
                 <td className="px-4 py-2">{l.minDwellSeconds}s</td>
                 <td className="px-4 py-2">
-                  {l.qrCodes[0] ? (
-                    <span className="font-mono text-xs">v{l.qrCodes[0].version}</span>
+                  {/* Both codes back the one sticker, so a missing half is worth
+                      surfacing — the printout would work for only one audience. */}
+                  {l.qrCodes[0] && l.clientQrCodes?.[0] ? (
+                    <span className="font-mono text-xs">v{l.clientQrCodes[0].version}</span>
+                  ) : l.qrCodes[0] || l.clientQrCodes?.[0] ? (
+                    <span className="text-xs text-amber-700" title="Tap New QR to mint the missing half">
+                      incomplete
+                    </span>
                   ) : (
                     <span className="text-xs text-rose-600">none</span>
                   )}
@@ -300,13 +320,13 @@ export default function SetupClient({
                     >
                       New QR
                     </button>
-                    {l.qrCodes[0] && (
+                    {l.clientQrCodes?.[0] && (
                       <a
-                        href={`/housekeeping/setup/qr-sheet?centerId=${centerId}&locationId=${l.id}`}
+                        href={`/housekeeping/setup/client-qr-sheet?centerId=${centerId}&locationId=${l.id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                        title={`Print just the QR for ${l.name}`}
+                        title={`Print the area sticker for ${l.name}`}
                       >
                         Print
                       </a>

@@ -143,6 +143,13 @@ export default function ClientRequestForm({
               className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700 py-2">
               Skip — I&apos;m a guest
             </button>
+
+            {/* Reviews need a verified contact detail, so they live on their own
+                route rather than inside this unverified flow. */}
+            <a href={`/qr/a/${encodeURIComponent(code)}?review=1`}
+              className="mt-2 block rounded-lg border py-2.5 text-center text-sm hover:bg-gray-50">
+              ⭐ Leave a review instead
+            </a>
           </div>
         )}
 

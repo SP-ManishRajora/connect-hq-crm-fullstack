@@ -25,11 +25,22 @@ const PUBLIC_PATHS = [
   "/api/housekeeping/requests/public",   // submit a request
   "/api/housekeeping/requests/resolve",  // resolve a client QR → area + catalogue
   "/api/housekeeping/requests/status",   // token-scoped status + confirmation
+  // Verified client reviews. Public by necessity — a member scanning a sticker has
+  // no account. The OTP is the credential; all three are rate-limited in-handler
+  // and the passcode itself is stored only as a salted hash.
+  "/api/housekeeping/reviews/request-otp",
+  "/api/housekeeping/reviews/verify-otp",
+  "/api/housekeeping/reviews/public",
 ];
 
 function isPublic(pathname: string) {
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return true;
   if (pathname.startsWith("/qr/")) return true;
+  // Legacy staff QR printouts. The page itself only redirects to /qr/a/<code>,
+  // which decides what to show from the session — so gating it here would send a
+  // member who scanned an old sticker to a login screen instead of the request
+  // form. Nothing is disclosed: the redirect target does its own resolving.
+  if (pathname.startsWith("/housekeeping/scan/")) return true;
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) return true;
   // PWA manifest must be fetchable without a session, or the browser never
   // offers to install the app. It contains no sensitive data.

@@ -6,7 +6,11 @@ import InspectClient from "./InspectClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function InspectPage() {
+export default async function InspectPage({
+  searchParams,
+}: {
+  searchParams: { code?: string };
+}) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
   if (!canAccess(me.role, "hk_inspect", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
@@ -45,6 +49,10 @@ export default async function InspectPage() {
       centers={centers}
       activeRound={activeRound ? JSON.parse(JSON.stringify(activeRound)) : null}
       defaultCenterId={me.centerId ?? centers[0]?.id ?? null}
+      // Handed over from the area sticker (/qr/a/<code>) when a supervisor chose
+      // "Start an inspection" there. Only submitted once a round is open, and only
+      // with a fresh GPS fix — the sticker cannot open a visit on its own.
+      pendingCode={searchParams.code ?? null}
     />
   );
 }

@@ -12,6 +12,7 @@ import { verifyScan, mergeFlags } from "@/lib/housekeeping/verification";
 import { getHkConfig } from "@/lib/housekeeping/settings";
 import { anglesForCategory, parseJsonArray } from "@/lib/housekeeping/types";
 import { assertDeviceAllowed, touchDevice } from "@/lib/housekeeping/devices";
+import { resolveForInspection } from "@/lib/housekeeping/qr-resolve";
 
 // POST /api/housekeeping/visits — scan a location QR and open a visit.
 //
@@ -42,20 +43,23 @@ export async function POST(req: NextRequest) {
       throw Object.assign(new Error("This round is already closed"), { __status: 400 });
     }
 
-    // Resolve the QR server-side. An inactive code means a retired printout.
-    const qr = await prisma.locationQrCode.findUnique({
-      where: { code: body.code },
-      include: { location: true },
-    });
-    if (!qr) throw Object.assign(new Error("Unrecognised QR code"), { __status: 404 });
-    if (!qr.active) {
+    // Resolve the QR server-side, across BOTH code tables. One sticker per area
+    // means the supervisor standing in the room scans whatever is on the wall; we
+    // map it to the area here rather than making them find a staff-only printout.
+    // An inactive code still means a retired printout.
+    const resolved = await resolveForInspection(body.code);
+    if (!resolved) throw Object.assign(new Error("Unrecognised QR code"), { __status: 404 });
+    if (!resolved.scanned.active) {
       throw Object.assign(
         new Error("This QR code has been retired. Ask an admin for the current printout."),
         { __status: 410 },
       );
     }
 
-    const loc = qr.location;
+    const loc = await prisma.inspectionLocation.findUnique({
+      where: { id: resolved.locationId },
+    });
+    if (!loc) throw Object.assign(new Error("Unrecognised QR code"), { __status: 404 });
     if (loc.deletedAt || !loc.active) {
       throw Object.assign(new Error("This location is no longer inspected"), { __status: 410 });
     }
@@ -118,7 +122,9 @@ export async function POST(req: NextRequest) {
         data: {
           roundId: round.id,
           locationId: loc.id,
-          qrCodeId: qr.id,
+          // Always the area's own staff code, even when the client sticker was the
+          // one physically scanned — a visit's provenance stays a LocationQrCode.
+          qrCodeId: resolved.staffQrCodeId,
           userId: u.id,
           sequence: (last?.sequence ?? 0) + 1,
           deviceId: body.deviceId ?? null,

@@ -7,17 +7,17 @@ import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";
 
-// The QR encodes a scan URL under /housekeeping/scan/<code>. The code segment is
-// opaque and random — it identifies the location only through a server-side
-// lookup, so a photographed QR discloses nothing about the centre or area.
+// The QR encodes /qr/a/<code> — the SAME destination as the client sheet. One
+// sticker per area: the landing page decides what to offer from the session, so
+// nobody has to be taught which QR is theirs. This sheet exists for the staff
+// copy (it prints the raw code for manual entry); the sticker itself is
+// interchangeable with the client one.
 //
-// Note this is NOT the existing /qr/[centerId] client page: that route is
-// centre-level and belongs to the client ticket flow. The area-level public
-// client screen ("Request Cleaning / Report a Problem") is Phase 9; until then
-// these codes serve the staff inspection flow only.
+// The code segment is opaque and random — it identifies the location only through
+// a server-side lookup, so a photographed QR discloses nothing about the area.
 function scanUrl(code: string) {
   const base = process.env.APP_URL || "";
-  return `${base}/housekeeping/scan/${code}`;
+  return `${base}/qr/a/${code}`;
 }
 
 export default async function QrSheetPage({

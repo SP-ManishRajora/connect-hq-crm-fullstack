@@ -21,16 +21,24 @@ type Req = {
 
 export default function RequestsClient({
   initial, staff, meId, meRole, centers, initialCenterId,
+  focusId = null, scannedCode = null,
 }: {
   initial: Req[]; staff: Person[]; meId: string; meRole: string;
   centers: { id: string; name: string }[]; initialCenterId: string;
+  /** Request to open on arrival, handed over from the area sticker. */
+  focusId?: string | null;
+  /** Code scanned at the area, prefilled into the completion field. */
+  scannedCode?: string | null;
 }) {
   const [rows, setRows] = useState<Req[]>(initial);
   const [centerId, setCenterId] = useState(initialCenterId);
   const [filter, setFilter] = useState<"open" | "mine" | "complaints" | "all">("open");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [detail, setDetail] = useState<Req | null>(null);
+  // Opened straight from the area sticker when a code was scanned there.
+  const [detail, setDetail] = useState<Req | null>(
+    () => (focusId ? initial.find((r) => r.id === focusId) ?? null : null),
+  );
 
   const canManage = ["ADMIN", "OWNER", "MANAGER", "CENTER_MANAGER"].includes(meRole);
 
@@ -249,8 +257,17 @@ export default function RequestsClient({
                   <div className="text-xs text-gray-500">
                     {detail._count.photos} photograph{detail._count.photos === 1 ? "" : "s"} uploaded
                   </div>
-                  <input id={`qr-${detail.id}`} placeholder="Scan or type the area QR code"
+                  {/* Prefilled when the sticker was already scanned to get here.
+                      The printed sticker carries the code beneath the QR, so typing
+                      it is a genuine fallback when a camera won't cooperate. */}
+                  <input id={`qr-${detail.id}`} defaultValue={scannedCode ?? ""}
+                    placeholder="Scan or type the code under the area QR"
                     className="w-full rounded-md border px-3 py-2 text-sm" />
+                  {scannedCode && (
+                    <div className="text-xs text-emerald-700">
+                      Code from the sticker you scanned is filled in.
+                    </div>
+                  )}
                   <button
                     onClick={() => {
                       const el = document.getElementById(`qr-${detail.id}`) as HTMLInputElement | null;

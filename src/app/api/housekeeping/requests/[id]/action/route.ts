@@ -8,6 +8,7 @@ import {
 import { transition, complaintReason, markComplaint, type CrStatus } from "@/lib/housekeeping/requests";
 import { getRequestConfig } from "@/lib/housekeeping/settings";
 import { verifyRequestCompletion, isStub } from "@/lib/housekeeping/ai";
+import { resolveQr } from "@/lib/housekeeping/qr-resolve";
 
 const schema = z.object({
   action: z.enum(["ASSIGN", "ACCEPT", "ON_THE_WAY", "START", "COMPLETE", "UNABLE", "CANCEL"]),
@@ -74,10 +75,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         // rather than quietly accepted.
         let qrVerified = false;
         if (b.qrCode) {
-          const qr = await prisma.clientQrCode.findUnique({
-            where: { code: b.qrCode },
-            select: { locationId: true, active: true },
-          });
+          // Resolved across both code tables — the responder scans the one sticker
+          // at the area and we accept it whichever table minted it. What still has
+          // to hold is that it names THIS request's area.
+          const qr = await resolveQr(b.qrCode);
           if (!qr || !qr.active) {
             throw Object.assign(new Error("That QR code is not recognised"), { __status: 400 });
           }

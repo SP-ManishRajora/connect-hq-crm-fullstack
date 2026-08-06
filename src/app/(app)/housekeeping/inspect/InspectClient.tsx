@@ -34,10 +34,13 @@ export default function InspectClient({
   centers,
   activeRound,
   defaultCenterId,
+  pendingCode = null,
 }: {
   centers: Center[];
   activeRound: Round | null;
   defaultCenterId: string | null;
+  /** Code carried over from the area sticker; scanned once a round is open. */
+  pendingCode?: string | null;
 }) {
   const [round, setRound] = useState<Round | null>(activeRound);
   const [centerId, setCenterId] = useState(defaultCenterId || centers[0]?.id || "");
@@ -146,6 +149,18 @@ export default function InspectClient({
     },
     [round],
   );
+
+  // Arriving from the area sticker with ?code=… — submit it as soon as a round is
+  // open. It still goes through /api/housekeeping/visits with a live GPS fix, so
+  // the geofence and dwell rules apply exactly as for a camera scan; the sticker
+  // only saves the supervisor from scanning the same code twice. The ref makes
+  // this fire once, so a rejected scan is not retried on every render.
+  const consumedCodeRef = useRef(false);
+  useEffect(() => {
+    if (!pendingCode || !round || consumedCodeRef.current) return;
+    consumedCodeRef.current = true;
+    handleScan(pendingCode);
+  }, [pendingCode, round, handleScan]);
 
   async function onPick(idx: number, file: File | null) {
     if (!file || !visit) return;

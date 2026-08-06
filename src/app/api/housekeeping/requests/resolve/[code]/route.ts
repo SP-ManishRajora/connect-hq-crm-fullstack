@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { rateLimit, clientIp } from "@/lib/housekeeping/rate-limit";
+import { resolveQr } from "@/lib/housekeeping/qr-resolve";
 
 export const runtime = "nodejs";
 
@@ -19,21 +20,26 @@ export async function GET(req: NextRequest, { params }: { params: { code: string
     );
   }
 
-  const qr = await prisma.clientQrCode.findUnique({
-    where: { code: params.code },
+  // Resolved across both code tables — one printed sticker per area, whichever
+  // table it was minted in.
+  const hit = await resolveQr(params.code);
+  if (!hit || !hit.active) {
+    return NextResponse.json({ error: "This code is not recognised." }, { status: 404 });
+  }
+
+  const location = await prisma.inspectionLocation.findUnique({
+    where: { id: hit.locationId },
     include: {
-      location: {
-        include: {
-          center: { select: { id: true, name: true, city: true } },
-          floor: { select: { id: true, name: true } },
-        },
-      },
+      center: { select: { id: true, name: true, city: true } },
+      floor: { select: { id: true, name: true } },
     },
   });
 
-  if (!qr || !qr.active || !qr.location || qr.location.deletedAt || !qr.location.active) {
+  if (!location || location.deletedAt || !location.active) {
     return NextResponse.json({ error: "This code is not recognised." }, { status: 404 });
   }
+
+  const qr = { location };
 
   const [types, clients] = await Promise.all([
     prisma.cleaningRequestType.findMany({

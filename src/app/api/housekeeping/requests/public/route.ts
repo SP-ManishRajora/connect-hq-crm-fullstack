@@ -9,6 +9,7 @@ import {
 } from "@/lib/housekeeping/requests";
 import { getRequestConfig } from "@/lib/housekeeping/settings";
 import { raiseAlert, buildAlertBody, appUrl, ALERT_TYPES } from "@/lib/housekeeping/alerts";
+import { resolveQr } from "@/lib/housekeeping/qr-resolve";
 
 export const runtime = "nodejs";
 
@@ -55,16 +56,19 @@ export async function POST(req: NextRequest) {
     }
 
     // The QR is the only source of centre/area — never taken from the body.
-    const qr = await prisma.clientQrCode.findUnique({
-      where: { code },
-      include: {
-        location: { include: { center: { select: { id: true, name: true } } } },
-      },
-    });
-    if (!qr || !qr.active || !qr.location || qr.location.deletedAt) {
+    // Resolved across both code tables so the single printed sticker works here
+    // regardless of which table it was minted in.
+    const qr = await resolveQr(code);
+    if (!qr || !qr.active) {
       return NextResponse.json({ error: "This code is not recognised." }, { status: 404 });
     }
-    const loc = qr.location;
+    const loc = await prisma.inspectionLocation.findUnique({
+      where: { id: qr.locationId },
+      include: { center: { select: { id: true, name: true } } },
+    });
+    if (!loc || loc.deletedAt) {
+      return NextResponse.json({ error: "This code is not recognised." }, { status: 404 });
+    }
 
     const type = await prisma.cleaningRequestType.findFirst({
       where: { id: cap(b.typeId, 64) ?? "", active: true },
