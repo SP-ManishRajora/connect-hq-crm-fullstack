@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import MapClient from "./MapClient";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function OccupancyMapPage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "occupancy")) {
+  if (!(await canAccessAsync(me.role, "occupancy", me.allowedModules))) {
     return <div className="card">You don’t have access to the Occupancy module.</div>;
   }
   const [centers, clients] = await Promise.all([
@@ -20,7 +20,7 @@ export default async function OccupancyMapPage() {
     <MapClient
       centers={JSON.parse(JSON.stringify(centers))}
       clients={JSON.parse(JSON.stringify(clients))}
-      canManage={canAccess(me.role, "occupancy_manage")}
+      canManage={await canAccessAsync(me.role, "occupancy_manage", me.allowedModules)}
     />
   );
 }

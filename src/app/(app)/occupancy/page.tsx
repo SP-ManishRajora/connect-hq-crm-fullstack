@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { getOccupancyKpis } from "@/lib/occupancy/dashboard";
 import { fmtINR, fmtDateTime } from "@/lib/utils";
@@ -23,7 +23,7 @@ const TYPE_LABEL: Record<string, string> = {
 export default async function OccupancyDashboard() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "occupancy")) {
+  if (!(await canAccessAsync(me.role, "occupancy", me.allowedModules))) {
     return <div className="card">You don’t have access to the Occupancy module.</div>;
   }
 

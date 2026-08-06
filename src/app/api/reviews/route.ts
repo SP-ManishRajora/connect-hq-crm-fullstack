@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { logAction } from "@/lib/audit";
 import { reviewSchema } from "@/lib/reviewSchema";
 
@@ -10,7 +10,7 @@ import { reviewSchema } from "@/lib/reviewSchema";
 // which also sanitises input (XSS) and enforces the conditional visitor rules.
 export async function POST(req: NextRequest) {
   const u = await getSessionUser();
-  if (!u || !canAccess(u.role, "reviews")) {
+  if (!u || !(await canAccessAsync(u.role, "reviews", u.allowedModules))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 // GET /api/reviews — list active reviews (newest first). Optional ?visitor=1 filter.
 export async function GET(req: NextRequest) {
   const u = await getSessionUser();
-  if (!u || !canAccess(u.role, "reviews")) {
+  if (!u || !(await canAccessAsync(u.role, "reviews", u.allowedModules))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const url = new URL(req.url);

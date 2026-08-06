@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { photoUrl } from "@/lib/housekeeping/storage";
@@ -23,7 +23,7 @@ function ago(d: Date | null | undefined): string {
 export default async function CentrePage({ params }: { params: { id: string } }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "housekeeping", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "housekeeping", me.allowedModules))) redirect("/dashboard");
 
   // A centre-scoped user may only open their own centre.
   const scope = centerScope(me);

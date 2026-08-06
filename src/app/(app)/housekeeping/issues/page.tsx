@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { photoUrl } from "@/lib/housekeeping/storage";
@@ -14,7 +14,7 @@ export default async function IssuesPage({
 }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "hk_issues", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "hk_issues", me.allowedModules))) redirect("/dashboard");
 
   const wide = me.role === "ADMIN" || me.role === "OWNER";
   const centers = await prisma.center.findMany({

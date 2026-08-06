@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { centerScope } from "@/lib/housekeeping/route-helpers";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AlertsPage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "housekeeping", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "housekeeping", me.allowedModules))) redirect("/dashboard");
 
   const scope = centerScope(me);
   const alerts = await prisma.hkAlert.findMany({

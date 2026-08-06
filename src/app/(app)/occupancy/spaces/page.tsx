@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import SpacesClient from "./SpacesClient";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function OccupancySpacesPage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "occupancy")) {
+  if (!(await canAccessAsync(me.role, "occupancy", me.allowedModules))) {
     return <div className="card">You don’t have access to the Occupancy module.</div>;
   }
 
@@ -19,7 +19,7 @@ export default async function OccupancySpacesPage() {
   ]);
 
   // Manage permission decides whether action buttons are shown.
-  const canManage = canAccess(me.role, "occupancy_manage");
+  const canManage = await canAccessAsync(me.role, "occupancy_manage", me.allowedModules);
 
   return (
     <SpacesClient

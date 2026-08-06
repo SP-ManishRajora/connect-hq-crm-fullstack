@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { logAction } from "@/lib/audit";
 
 // DELETE /api/reviews/:id — soft-delete (status -> Deleted, sets deletedAt).
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
   const u = await getSessionUser();
-  if (!u || !canAccess(u.role, "reviews")) {
+  if (!u || !(await canAccessAsync(u.role, "reviews", u.allowedModules))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const existing = await prisma.review.findUnique({ where: { id: params.id } });

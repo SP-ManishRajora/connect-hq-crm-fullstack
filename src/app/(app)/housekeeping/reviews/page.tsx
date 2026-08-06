@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import ClientReviewsClient from "./ClientReviewsClient";
@@ -16,7 +16,7 @@ export default async function HkReviewsPage({
 }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "housekeeping", parseAllowedModules(me.allowedModules))) {
+  if (!(await canAccessAsync(me.role, "housekeeping", me.allowedModules))) {
     redirect("/dashboard");
   }
 

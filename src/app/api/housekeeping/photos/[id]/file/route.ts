@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { verifyPhotoSignature, readPhoto } from "@/lib/housekeeping/storage";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const u = await getSessionUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!canAccess(u.role, "housekeeping", parseAllowedModules(u.allowedModules))) {
+  if (!(await canAccessAsync(u.role, "housekeeping", u.allowedModules))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { getManagementStats } from "@/lib/housekeeping/dashboard";
 import { centerScope } from "@/lib/housekeeping/route-helpers";
@@ -25,7 +26,7 @@ export default async function HousekeepingDashboard() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
   const mods = parseAllowedModules(me.allowedModules);
-  if (!canAccess(me.role, "housekeeping", mods)) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "housekeeping", me.allowedModules))) redirect("/dashboard");
 
   const stats = await getManagementStats(centerScope(me));
   const t = stats.totals;

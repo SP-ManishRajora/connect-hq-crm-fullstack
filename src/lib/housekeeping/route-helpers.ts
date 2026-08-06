@@ -1,17 +1,26 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, type SessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { toErrorResponse } from "./types";
 
 // Shared guards for housekeeping API routes. Unlike the occupancy helpers these
 // gate on MODULE KEYS rather than raw roles, so per-user `allowedModules`
 // overrides are honoured exactly as they are in the sidebar.
-
+//
+// Resolution order (identical to the sidebar's, via canAccessAsync):
+//   1. User.allowedModules — a per-user override always wins
+//   2. the role's modules from the AppRole table
+//   3. the hard-coded MODULE_ACCESS map, when that row is missing or the
+//      database is unreachable
+//
+// The synchronous canAccess() only ever sees step 3, so a custom role such as
+// HOUSEKEEPING — which exists only in AppRole — was shown a sidebar link and then
+// refused by the route behind it.
 export async function requireModule(mod: string): Promise<SessionUser | NextResponse> {
   const u = await getSessionUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!canAccess(u.role, mod, parseAllowedModules(u.allowedModules))) {
+  if (!(await canAccessAsync(u.role, mod, u.allowedModules))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return u;

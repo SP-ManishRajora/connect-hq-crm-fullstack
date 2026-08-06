@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import QRCode from "qrcode";
@@ -22,7 +22,7 @@ export default async function ClientQrSheet({
 }) {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "hk_admin", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "hk_admin", me.allowedModules))) redirect("/dashboard");
 
   const centerId = searchParams.centerId;
   if (!centerId) redirect("/housekeeping/setup");

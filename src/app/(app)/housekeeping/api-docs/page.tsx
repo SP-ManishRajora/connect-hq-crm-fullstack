@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { ROUTES, OPENAPI_VERSION } from "@/lib/housekeeping/openapi";
 
@@ -21,7 +21,7 @@ const METHOD_CLS: Record<string, string> = {
 export default async function ApiDocsPage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "housekeeping", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "housekeeping", me.allowedModules))) redirect("/dashboard");
 
   const modules = [...new Set(ROUTES.map((r) => r.module))];
   const publicCount = ROUTES.filter((r) => r.auth === "none").length;

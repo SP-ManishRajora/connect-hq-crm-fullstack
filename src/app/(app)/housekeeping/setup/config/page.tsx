@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import {
   getHkConfig, getIssueConfig, getGeneratorConfig, getRequestConfig,
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function ConfigPage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "hk_admin", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "hk_admin", me.allowedModules))) redirect("/dashboard");
 
   const [inspection, issues, generator, requests, efficiency, retention, ai] = await Promise.all([
     getHkConfig(), getIssueConfig(), getGeneratorConfig(), getRequestConfig(),

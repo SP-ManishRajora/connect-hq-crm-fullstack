@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { computeEfficiency } from "@/lib/housekeeping/efficiency";
@@ -19,7 +19,7 @@ function pct(n: number, d: number) {
 export default async function MyPerformancePage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!canAccess(me.role, "hk_inspect", parseAllowedModules(me.allowedModules))) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "hk_inspect", me.allowedModules))) redirect("/dashboard");
 
   const from = new Date(Date.now() - 30 * 86400_000);
 

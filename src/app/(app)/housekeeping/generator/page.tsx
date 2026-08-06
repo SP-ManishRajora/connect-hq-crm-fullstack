@@ -1,5 +1,6 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccess, parseAllowedModules } from "@/lib/rbac";
+import { parseAllowedModules } from "@/lib/rbac";
+import { canAccessAsync } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { openRun } from "@/lib/housekeeping/generator-service";
@@ -15,7 +16,7 @@ export default async function GeneratorPage({
   const me = await getSessionUser();
   if (!me) redirect("/login");
   const mods = parseAllowedModules(me.allowedModules);
-  if (!canAccess(me.role, "hk_generator", mods)) redirect("/dashboard");
+  if (!(await canAccessAsync(me.role, "hk_generator", me.allowedModules))) redirect("/dashboard");
 
   const wide = me.role === "ADMIN" || me.role === "OWNER";
   const centers = await prisma.center.findMany({
@@ -78,7 +79,7 @@ export default async function GeneratorPage({
       initial={JSON.parse(JSON.stringify(gens))}
       discrepancies={JSON.parse(JSON.stringify(discrepancies))}
       initialCenterId={centerId}
-      canAdmin={canAccess(me.role, "hk_admin", mods)}
+      canAdmin={await canAccessAsync(me.role, "hk_admin", me.allowedModules)}
     />
   );
 }
