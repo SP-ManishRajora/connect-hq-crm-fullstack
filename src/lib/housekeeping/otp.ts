@@ -1,12 +1,14 @@
 import { randomInt, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 
-// One-time passcodes for the public area-QR flow. A member scanning a sticker has
-// no account and should not need one, so the passcode is the entire proof that
-// they control the contact detail they typed.
+// One-time passcodes, shared by three flows: leaving a review from an area QR,
+// signing a client in without a password, and a visitor confirming their own
+// arrival. In each the passcode is the entire proof that the person controls the
+// contact detail they typed, so `purpose` keeps them from bleeding into one
+// another.
 //
-// That makes this the only barrier between the review table and anyone with a
-// phone, hence the deliberate choices below:
+// That makes this the only barrier between those surfaces and anyone with an
+// email address, hence the deliberate choices below:
 //   • the code is stored as a scrypt hash with a per-row salt — a dumped table
 //     yields no live codes
 //   • comparison is constant-time, so response timing cannot leak a prefix
@@ -25,6 +27,12 @@ export const OTP_PER_IP = 10;
 export const OTP_WINDOW_MS = 15 * 60 * 1000;
 
 export type OtpChannel = "SMS" | "EMAIL";
+
+/**
+ * What a code authorises. Scoped so a passcode mailed for one purpose cannot be
+ * replayed for another — a review code must never sign anybody in.
+ */
+export type OtpPurpose = "REVIEW" | "LOGIN" | "VISIT";
 
 /**
  * Digits-only for phones, lowercased for email. Normalising on the way in means
@@ -78,14 +86,18 @@ export type IssuedOtp = { id: string; code: string; expiresAt: Date };
 export async function issueOtp(opts: {
   destination: string;
   channel: OtpChannel;
+  purpose?: OtpPurpose;
   locationId?: string | null;
   centerId?: string | null;
   requestIp?: string | null;
 }): Promise<IssuedOtp> {
   const now = new Date();
+  const purpose: OtpPurpose = opts.purpose ?? "REVIEW";
 
+  // Only codes for the SAME purpose are retired. Requesting a login code must not
+  // silently kill a review code the person is still typing.
   await prisma.clientOtp.updateMany({
-    where: { destination: opts.destination, consumedAt: null, expiresAt: { gt: now } },
+    where: { destination: opts.destination, purpose, consumedAt: null, expiresAt: { gt: now } },
     data: { consumedAt: now },
   });
 
@@ -95,6 +107,7 @@ export async function issueOtp(opts: {
     data: {
       destination: opts.destination,
       channel: opts.channel,
+      purpose,
       codeHash: hashCode(code, salt),
       salt,
       locationId: opts.locationId ?? null,
@@ -119,11 +132,17 @@ export type VerifyResult =
  * so an attacker cannot distinguish "no such code" from "wrong code" and use the
  * difference to enumerate destinations.
  */
-export async function verifyOtp(destination: string, code: string): Promise<VerifyResult> {
+export async function verifyOtp(
+  destination: string,
+  code: string,
+  purpose: OtpPurpose = "REVIEW",
+): Promise<VerifyResult> {
   const now = new Date();
 
+  // Scoped by purpose: a code issued for a review is simply NOT FOUND when
+  // presented at the login endpoint, indistinguishable from never having existed.
   const row = await prisma.clientOtp.findFirst({
-    where: { destination, consumedAt: null },
+    where: { destination, purpose, consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
   if (!row) return { ok: false, reason: "NOT_FOUND" };
@@ -151,9 +170,14 @@ export async function verifyOtp(destination: string, code: string): Promise<Veri
  */
 export const OTP_REVIEW_GRACE_MINUTES = 30;
 
-export async function findVerifiedOtp(otpId: string, destination: string) {
+export async function findVerifiedOtp(
+  otpId: string,
+  destination: string,
+  purpose: OtpPurpose = "REVIEW",
+) {
   const row = await prisma.clientOtp.findUnique({ where: { id: otpId } });
   if (!row || !row.consumedAt || row.destination !== destination) return null;
+  if (row.purpose !== purpose) return null;
   const deadline = new Date(row.consumedAt.getTime() + OTP_REVIEW_GRACE_MINUTES * 60 * 1000);
   if (deadline <= new Date()) return null;
   return row;

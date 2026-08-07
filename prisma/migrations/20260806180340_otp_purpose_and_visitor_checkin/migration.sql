@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE `ClientOtp` ADD COLUMN `purpose` VARCHAR(191) NOT NULL DEFAULT 'REVIEW';
+
+-- AlterTable
+ALTER TABLE `Visitor` ADD COLUMN `checkedInAt` DATETIME(3) NULL,
+    ADD COLUMN `emailVerified` BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN `otpId` VARCHAR(191) NULL,
+    ADD COLUMN `phoneVerified` BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN `verifiedAt` DATETIME(3) NULL;
+

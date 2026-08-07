@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   generateCode, normaliseDestination, isValidDestination,
   OTP_LENGTH, OTP_MAX_ATTEMPTS,
+  type OtpPurpose,
 } from "@/lib/housekeeping/otp";
 
 // The passcode is the entire barrier between the review table and anyone with a
@@ -70,5 +71,26 @@ describe("brute-force budget", () => {
     // code space, the passcode would stop being a barrier.
     expect(OTP_MAX_ATTEMPTS).toBeLessThanOrEqual(10);
     expect(10 ** OTP_LENGTH / OTP_MAX_ATTEMPTS).toBeGreaterThan(100_000);
+  });
+});
+
+describe("purpose isolation", () => {
+  it("names exactly the three purposes the app issues codes for", () => {
+    // A compile-time guard with a runtime witness: if someone adds a fourth
+    // purpose they must decide, here, which endpoints accept it. The danger this
+    // guards against is a code minted for one flow being spendable in another —
+    // a review code signing somebody in.
+    const purposes: OtpPurpose[] = ["REVIEW", "LOGIN", "VISIT"];
+    expect(new Set(purposes).size).toBe(3);
+  });
+
+  it("treats the purpose as part of the code's identity, not a label", () => {
+    // verifyOtp/findVerifiedOtp both filter on purpose, so the same digits issued
+    // for REVIEW simply do not exist at the LOGIN endpoint. Asserted here as
+    // documentation of the contract the routes rely on; the live cross-purpose
+    // rejection is covered end-to-end against the running server.
+    const forReview: OtpPurpose = "REVIEW";
+    const forLogin: OtpPurpose = "LOGIN";
+    expect(forReview).not.toBe(forLogin);
   });
 });

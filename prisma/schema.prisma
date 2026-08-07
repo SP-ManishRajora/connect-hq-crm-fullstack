@@ -38,7 +38,7 @@ model User {
   updatedAt DateTime  @updatedAt
 
   // Patch v4 — per-user module override + user transfer audit
-  allowedModules  String? // JSON array of module names; null = role defaults
+  allowedModules  String? @db.Text // JSON array of module names; null = role defaults
   transferredToId String?
   transferredTo   User?     @relation("UserTransferTo", fields: [transferredToId], references: [id])
   transferredFrom User[]    @relation("UserTransferTo")
@@ -276,6 +276,16 @@ model Visitor {
   centerId      String?
   center        Center?   @relation(fields: [centerId], references: [id])
   notes         String?   @db.Text
+  // Self check-in (public, OTP-verified). A visitor proves control of an email
+  // and their arrival is recorded — no account and no session is created, so this
+  // adds a verified fact to a staff-owned record rather than a login.
+  phoneVerified Boolean   @default(false)
+  emailVerified Boolean   @default(false)
+  verifiedAt    DateTime?
+  checkedInAt   DateTime?
+  // Which OTP proved it, for the audit trail. Plain String: ClientOtp rows are
+  // purged after 24h and a check-in must outlive the code that authorised it.
+  otpId         String?
   createdAt     DateTime  @default(now())
 }
 
@@ -995,7 +1005,7 @@ model UserInvite {
   name           String
   role           String
   centerId       String?
-  allowedModules String? // JSON array of module names; null = default for role
+  allowedModules String?   @db.Text // JSON array of module names; null = default for role
   invitedById    String
   invitedBy      User      @relation("InvitedBy", fields: [invitedById], references: [id])
   status         String    @default("PENDING") // PENDING | ACCEPTED | EXPIRED | CANCELLED
@@ -2101,6 +2111,12 @@ model ClientOtp {
   destination String
   // "SMS" | "EMAIL" — which channel actually carried the code.
   channel     String    @default("SMS")
+  // What the code authorises: REVIEW | LOGIN | VISIT.
+  //
+  // Scoped deliberately. A code mailed to leave a review must NOT be replayable
+  // as a sign-in credential, so every consumer checks the purpose it expects and
+  // a mismatch is treated exactly like a wrong code.
+  purpose     String    @default("REVIEW")
   codeHash    String
   // Random per-row salt, so identical codes to different people differ on disk.
   salt        String

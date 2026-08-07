@@ -16,6 +16,14 @@ const PUBLIC_PATHS = [
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
   "/api/auth/request-reset",       // patch v4 — public reset request
+  // Passwordless sign-in for CLIENT accounts. Public by necessity — the caller has
+  // no session yet. Both are rate-limited per address and per IP, the request side
+  // never discloses whether an account exists, and eligibility is re-checked on
+  // verify before any session is issued.
+  "/api/auth/otp",
+  // Visitor self check-in. Verifies an email and stamps arrival; issues no session.
+  "/api/visitors/self",
+  "/visit",
   "/api/invites",                  // patch v4 — public invite verify/accept (token subpaths)
   "/api/password-resets/use",      // patch v4 — public token-based password set
   "/api/leads/public",
