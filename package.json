@@ -18,7 +18,8 @@
     "hk:verify": "tsx prisma/verify-acceptance.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "mail:test": "tsx scripts/test-mail.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
