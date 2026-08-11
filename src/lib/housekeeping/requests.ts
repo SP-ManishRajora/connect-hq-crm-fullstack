@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { HttpError } from "./types";
 import { getRequestConfig } from "./settings";
+import { assignableUsers } from "@/lib/roles";
 
 export type CrStatus =
   | "NEW" | "ASSIGNED" | "ACCEPTED" | "ON_THE_WAY" | "IN_PROGRESS"
@@ -108,14 +109,7 @@ export async function pickAssignee(centerId: string): Promise<string | null> {
   if (cfg.defaultAssigneeByCenter[centerId]) return cfg.defaultAssigneeByCenter[centerId];
   if (!cfg.autoAssign) return null;
 
-  const candidates = await prisma.user.findMany({
-    where: {
-      active: true,
-      role: { in: ["OPS", "CENTER_MANAGER"] },
-      OR: [{ centerId }, { centerId: null }],
-    },
-    select: { id: true },
-  });
+  const candidates = await assignableUsers("hk_requests", centerId);
   if (candidates.length === 0) return null;
 
   const loads = await Promise.all(

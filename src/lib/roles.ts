@@ -83,6 +83,55 @@ export async function canAccessAsync(
   return (await modulesForRole(role)).includes(mod);
 }
 
+/** Every role key that can reach `mod`, database first, code fallback second. */
+export async function rolesWithModule(mod: string): Promise<string[]> {
+  const map = await roleModuleMap();
+  if (map.size > 0) {
+    return [...map.entries()].filter(([, mods]) => mods.includes(mod)).map(([key]) => key);
+  }
+  // Database unreachable — fall back to the hard-coded map.
+  return ((MODULE_ACCESS[mod] as string[]) ?? []).slice();
+}
+
+/**
+ * Users who can be assigned work in `mod` at a centre.
+ *
+ * Derived from module access rather than a hard-coded role list: a custom role
+ * created in the roles admin screen (HOUSEKEEPING, say) is a first-class
+ * assignee the moment it is granted the module, with no code change. Per-user
+ * `allowedModules` overrides are honoured too, so a user granted or denied the
+ * module individually appears or disappears accordingly.
+ *
+ * Centre-less users are included so a small site always has someone to assign to.
+ */
+export async function assignableUsers(
+  mod: string,
+  centerId: string,
+): Promise<{ id: string; name: string }[]> {
+  const roles = await rolesWithModule(mod);
+
+  const rows = await prisma.user.findMany({
+    where: {
+      active: true,
+      deletedAt: null,
+      OR: [{ centerId }, { centerId: null }],
+      // Either the role grants the module, or the user has a personal override
+      // that might. Overrides are filtered precisely below.
+      ...(roles.length ? {} : { allowedModules: { not: null } }),
+    },
+    select: { id: true, name: true, role: true, allowedModules: true },
+    orderBy: { name: "asc" },
+  });
+
+  return rows
+    .filter((u) => {
+      const override = parseAllowedModules(u.allowedModules);
+      if (override && override.length > 0) return override.includes(mod);
+      return roles.includes(u.role);
+    })
+    .map((u) => ({ id: u.id, name: u.name }));
+}
+
 /** Every role plus how many users hold it — powers the roles admin screen. */
 export async function listRoles(): Promise<RoleRecord[]> {
   const [rows, counts] = await Promise.all([

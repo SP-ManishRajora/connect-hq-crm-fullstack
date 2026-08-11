@@ -102,6 +102,15 @@ export const ROUTES: RouteDoc[] = [
     query: { exp: "unix seconds", sig: "HMAC" },
     responses: { "200": "image bytes", "403": "bad or expired signature", "410": "purged under the retention policy" } },
 
+  { path: "/api/housekeeping/visits/{id}/approve", method: "post", module: "Inspection", auth: "session",
+    summary: "Management sign-off on an inspected area (centre manager and above)",
+    body: { approve: "boolean (false withdraws)", note: "string?" },
+    responses: {
+      "200": "updated visit with approver",
+      "403": "not a centre manager or above, or you inspected this area yourself",
+      "409": "not submitted yet, or already approved",
+    } },
+
   // ---- issues ----
   { path: "/api/housekeeping/issues", method: "get", module: "Issues", auth: "session", scope: "hk_issues",
     summary: "List issues", query: { open: "0|1", mine: "0|1", overdue: "0|1", severity: "enum" },

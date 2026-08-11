@@ -77,6 +77,8 @@ model User {
   // Housekeeping / inspection module
   hkRounds  InspectionRound[]    @relation("HkRoundUser")
   hkVisits  InspectionVisit[]    @relation("HkVisitUser")
+  hkVisitsApproved InspectionVisit[] @relation("HkVisitApprover")
+  hkVisitsRejected InspectionVisit[] @relation("HkVisitRejecter")
   hkPhotos  InspectionPhoto[]    @relation("HkPhotoUser")
   hkDevices DeviceRegistration[] @relation("HkDeviceUser")
 
@@ -95,6 +97,7 @@ model User {
 
   // Housekeeping — alerts & scoring (Phase 8)
   hkAlertsAcked    HkAlert[]           @relation("HkAlertAck")
+  hkAlertsTargeted HkAlert[] @relation("HkAlertTarget")
   hkScores         HkEfficiencyScore[] @relation("HkEfficiencyUser")
   hkScoreOverrides HkEfficiencyScore[] @relation("HkEfficiencyOverride")
   aiReviews        AiPhotoFinding[]    @relation("AiFindingReviewer")
@@ -1208,6 +1211,22 @@ model InspectionVisit {
   flags        String?       @db.Text // JSON array of verification flags
   observations String?       @db.Text
 
+  // Management sign-off that the area's condition is acceptable (2026-08-04).
+  // Distinct from issue verification: that closes one corrective action, this
+  // approves the inspection of the area as a whole.
+  approvedById String?
+  approvedBy   User?         @relation("HkVisitApprover", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  approvalNote String?       @db.Text
+
+  // Rejection is the counterpart to approval: the area must be inspected again.
+  // Kept as its own field set rather than reusing approvedAt, so the audit trail
+  // shows an approve-after-reject as two distinct events, not an overwrite.
+  rejectedById String?
+  rejectedBy   User?         @relation("HkVisitRejecter", fields: [rejectedById], references: [id])
+  rejectedAt   DateTime?
+  rejectionReason String?    @db.Text
+
   photos      InspectionPhoto[]
   issues      HkIssue[]
   areaSummary AreaSummary?
@@ -1667,6 +1686,11 @@ model HkAlert {
   meta        String? @db.Text // JSON: readings, deltas, photo ids, deep link
 
   status     HkAlertStatus @default(NEW)
+  // Addressed to ONE person rather than the centre's email groups — used when
+  // an individual has to act (e.g. re-inspect a rejected area).
+  targetUserId String?
+  targetUser   User?    @relation("HkAlertTarget", fields: [targetUserId], references: [id])
+
   ackById    String?
   ackBy      User?         @relation("HkAlertAck", fields: [ackById], references: [id])
   ackAt      DateTime?

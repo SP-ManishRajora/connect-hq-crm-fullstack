@@ -27,6 +27,19 @@ export default async function InspectPage({
     orderBy: { name: "asc" },
   });
 
+  // Areas this person must re-inspect. Shown before they start so the round
+  // covers them, rather than discovering it afterwards.
+  const rejected = await prisma.inspectionVisit.findMany({
+    where: { userId: me.id, rejectedAt: { not: null } },
+    orderBy: { rejectedAt: "desc" },
+    take: 10,
+    select: {
+      id: true, rejectionReason: true, rejectedAt: true,
+      location: { select: { name: true } },
+      rejectedBy: { select: { name: true } },
+    },
+  });
+
   const activeRound = await prisma.inspectionRound.findFirst({
     where: { userId: me.id, status: "IN_PROGRESS" },
     orderBy: { startedAt: "desc" },
@@ -49,6 +62,7 @@ export default async function InspectPage({
       centers={centers}
       activeRound={activeRound ? JSON.parse(JSON.stringify(activeRound)) : null}
       defaultCenterId={me.centerId ?? centers[0]?.id ?? null}
+      rejected={JSON.parse(JSON.stringify(rejected))}
       // Handed over from the area sticker (/qr/a/<code>) when a supervisor chose
       // "Start an inspection" there. Only submitted once a round is open, and only
       // with a fresh GPS fix — the sticker cannot open a visit on its own.

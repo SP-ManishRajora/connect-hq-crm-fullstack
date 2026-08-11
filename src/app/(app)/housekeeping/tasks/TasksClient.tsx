@@ -6,7 +6,7 @@ import { analyseImage } from "@/lib/housekeeping/client-capture";
 type Task = {
   id: string; title: string; description: string | null;
   category: string; severity: Severity; status: IssueStatus;
-  dueAt: string | null; beforePhotoUrl: string | null;
+  dueAt: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null;
   center: { name: string }; location: { name: string } | null;
   actions: { id: string; afterPhotoId: string | null }[];
 };
@@ -93,6 +93,10 @@ export default function TasksClient({ initial }: { initial: Task[] }) {
         {rows.map((t) => {
           const due = dueLabel(t);
           const up = uploads[t.id];
+          // Local preview while the upload is fresh; the stored photo once the
+          // list has reloaded. Either counts as "an after photo exists".
+          const afterSrc = up?.preview ?? t.afterPhotoUrl;
+          const hasAfter = Boolean(up ?? t.afterPhotoUrl);
           return (
             <div key={t.id} className={`rounded-xl border bg-white p-4 ${due?.late ? "border-rose-300" : ""}`}>
               <div className="flex items-start gap-3">
@@ -139,11 +143,11 @@ export default function TasksClient({ initial }: { initial: Task[] }) {
 
                 {t.status === "IN_PROGRESS" && (
                   <div className="space-y-2">
-                    {up && (
+                    {afterSrc && (
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={up.preview} alt="After" className="rounded-lg w-full max-h-48 object-cover" />
-                        {up.dup && (
+                        <img src={afterSrc} alt="After" className="rounded-lg w-full max-h-48 object-cover" />
+                        {up?.dup && (
                           <div className="text-xs text-rose-800 bg-rose-50 rounded p-2">
                             ⚠ This photograph {up.dup.kind === "EXACT" ? "is identical to" : "looks very similar to"} an
                             existing one ({up.dup.locationName}) — flagged for review.
@@ -165,14 +169,14 @@ export default function TasksClient({ initial }: { initial: Task[] }) {
                       onClick={() =>
                         post(
                           `/api/housekeeping/issues/${t.id}/complete`,
-                          { afterPhotoId: up?.id ?? null, notes: notes[t.id] || null },
+                          { afterPhotoId: up?.id ?? t.actions[0]?.afterPhotoId ?? null, notes: notes[t.id] || null },
                           "Submitted for verification.",
                         )
                       }
-                      disabled={busy !== null || !up}
+                      disabled={busy !== null || !hasAfter}
                       className="w-full rounded-lg bg-brand-600 py-3 text-white text-sm font-medium disabled:opacity-40"
                     >
-                      {up ? "Submit for verification" : "Add the after photograph first"}
+                      {hasAfter ? "Submit for verification" : "Add the after photograph first"}
                     </button>
                     <button
                       onClick={() => {
@@ -188,8 +192,17 @@ export default function TasksClient({ initial }: { initial: Task[] }) {
                 )}
 
                 {t.status === "AWAITING_VERIFICATION" && (
-                  <div className="text-xs text-violet-800 bg-violet-50 rounded p-2.5">
-                    Submitted — waiting for a colleague to verify. You cannot sign off your own work.
+                  <div className="space-y-2">
+                    {afterSrc && (
+                      <figure>
+                        <figcaption className="text-[10px] uppercase text-gray-500 mb-1">Submitted evidence</figcaption>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={afterSrc} alt="After" className="rounded-lg w-full max-h-48 object-cover" />
+                      </figure>
+                    )}
+                    <div className="text-xs text-violet-800 bg-violet-50 rounded p-2.5">
+                      Submitted — waiting for a colleague to verify. You cannot sign off your own work.
+                    </div>
                   </div>
                 )}
               </div>

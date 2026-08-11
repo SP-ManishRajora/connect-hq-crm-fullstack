@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccessAsync } from "@/lib/roles";
+import { canAccessAsync, assignableUsers } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import RequestsClient from "./RequestsClient";
@@ -61,15 +61,7 @@ export default async function RequestsPage({
         _count: { select: { photos: true } },
       },
     }),
-    prisma.user.findMany({
-      where: {
-        active: true,
-        role: { in: ["OPS", "CENTER_MANAGER", "MANAGER"] },
-        OR: [{ centerId }, { centerId: null }],
-      },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+    assignableUsers("hk_requests", centerId),
   ]);
 
   return (

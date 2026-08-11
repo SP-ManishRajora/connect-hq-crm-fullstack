@@ -5,6 +5,7 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { photoUrl } from "@/lib/housekeeping/storage";
 import { centerScope } from "@/lib/housekeeping/route-helpers";
+import ApproveButton from "./ApproveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,14 @@ function ago(d: Date | null | undefined): string {
   if (h < 1) return `${Math.round(h * 60)} min ago`;
   if (h < 48) return `${Math.round(h)} h ago`;
   return `${Math.round(h / 24)} d ago`;
+}
+
+// Distance to a date, always positive — the caller decides the wording.
+function until(d: Date): string {
+  const m = Math.abs(d.getTime() - Date.now()) / 60000;
+  if (m < 60) return `${Math.round(m)} min`;
+  if (m < 2880) return `${Math.round(m / 60)} h`;
+  return `${Math.round(m / 1440)} d`;
 }
 
 export default async function CentrePage({ params }: { params: { id: string } }) {
@@ -45,7 +54,9 @@ export default async function CentrePage({ params }: { params: { id: string } })
           orderBy: { scannedAt: "desc" },
           take: 1,
           include: {
-            user: { select: { name: true } },
+            user: { select: { id: true, name: true } },
+            approvedBy: { select: { name: true } },
+            rejectedBy: { select: { name: true } },
             areaSummary: true,
             photos: { orderBy: { slot: "asc" }, take: 1, select: { id: true, purgedAt: true } },
           },
@@ -68,6 +79,9 @@ export default async function CentrePage({ params }: { params: { id: string } })
       where: { centerId: centre.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
     }),
   ]);
+
+  // Centre manager and above may sign off an inspected area.
+  const canApprove = ["CENTER_MANAGER", "MANAGER", "OWNER", "ADMIN"].includes(me.role);
 
   const inspectedToday = locations.filter((l) => {
     const v = l.visits[0];
@@ -172,7 +186,10 @@ export default async function CentrePage({ params }: { params: { id: string } })
                     {v ? `Inspected ${ago(v.scannedAt)} by ${v.user.name}` : "Never inspected"}
                     {nextDue && (
                       <span className={overdue ? " text-rose-600 font-medium" : ""}>
-                        {" · "}{overdue ? "due now" : `next ${ago(nextDue).replace(" ago", " overdue")}`}
+                        {/* `ago()` on a FUTURE date returns a negative figure, which
+                            previously rendered as "next -1164 min overdue". Phrase
+                            each case explicitly instead. */}
+                        {" · "}{overdue ? `overdue by ${until(nextDue)}` : `next due in ${until(nextDue)}`}
                       </span>
                     )}
                   </div>
@@ -185,6 +202,23 @@ export default async function CentrePage({ params }: { params: { id: string } })
                     </div>
                   )}
                 </div>
+
+                {/* Sign-off. Only shown once an area has actually been inspected. */}
+                {v && (
+                  <div className="flex-shrink-0 self-center">
+                    <ApproveButton
+                      visitId={v.id}
+                      approved={Boolean(v.approvedAt)}
+                      approvedBy={v.approvedBy?.name ?? null}
+                      approvedAt={v.approvedAt ? v.approvedAt.toISOString() : null}
+                      rejected={Boolean(v.rejectedAt)}
+                      rejectedBy={v.rejectedBy?.name ?? null}
+                      rejectionReason={v.rejectionReason}
+                      canApprove={canApprove}
+                      isOwnWork={v.userId === me.id && !["ADMIN", "OWNER"].includes(me.role)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}

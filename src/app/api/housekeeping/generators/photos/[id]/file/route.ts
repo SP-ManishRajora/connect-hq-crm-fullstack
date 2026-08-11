@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccessAsync } from "@/lib/roles";
 import { verifyPhotoSignature, readPhoto } from "@/lib/housekeeping/storage";
 
 export const runtime = "nodejs";
@@ -20,7 +19,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const u = await getSessionUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!(await canAccessAsync(u.role, "hk_generator", u.allowedModules))) {
+  // Same rule as inspection photos: any signed-in staff member may view the
+  // evidence; CLIENT portal users may not. Centre scoping still applies below.
+  if (u.role === "CLIENT") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

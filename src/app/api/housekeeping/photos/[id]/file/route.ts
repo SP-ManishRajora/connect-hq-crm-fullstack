@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { canAccessAsync } from "@/lib/roles";
 import { verifyPhotoSignature, readPhoto } from "@/lib/housekeeping/storage";
 
 export const runtime = "nodejs";
 
 // GET /api/housekeeping/photos/[id]/file?exp=…&sig=…
 //
-// Two independent gates, deliberately: a valid signature AND a live session with
-// module access. A leaked URL alone therefore grants nothing, and an authorised
-// user still can't enumerate photos without a signature.
+// Two independent gates, deliberately: a valid signature AND a live session.
+// A leaked URL alone therefore grants nothing, and a signed-in user still can't
+// enumerate photos without a signature.
+//
+// Viewing is open to ANY signed-in staff member (decided 2026-08-04) — not just
+// the housekeeping module — so anyone reviewing a centre can see the evidence.
+// Two limits remain, because these are internal operational records that can
+// show staff and client property:
+//   • CLIENT-role users are excluded (portal tenants are not staff)
+//   • centre scoping still applies: a centre-bound user sees only their centre
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const { searchParams } = new URL(req.url);
   const exp = Number(searchParams.get("exp"));
@@ -22,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const u = await getSessionUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!(await canAccessAsync(u.role, "housekeeping", u.allowedModules))) {
+  if (u.role === "CLIENT") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

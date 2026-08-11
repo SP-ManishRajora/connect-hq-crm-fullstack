@@ -27,6 +27,11 @@ type Slot = {
 
 type Step = "IDLE" | "SCANNING" | "CAPTURING";
 
+type Rejected = {
+  id: string; rejectionReason: string | null; rejectedAt: string;
+  location: { name: string }; rejectedBy: { name: string } | null;
+};
+
 const ISSUE_CATEGORIES = ["cleanliness", "maintenance", "safety", "consumables", "presentation"];
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
 
@@ -35,12 +40,15 @@ export default function InspectClient({
   activeRound,
   defaultCenterId,
   pendingCode = null,
+  rejected = [],
 }: {
   centers: Center[];
   activeRound: Round | null;
   defaultCenterId: string | null;
   /** Code carried over from the area sticker; scanned once a round is open. */
   pendingCode?: string | null;
+  /** Areas a manager sent back to this person for re-inspection. */
+  rejected?: Rejected[];
 }) {
   const [round, setRound] = useState<Round | null>(activeRound);
   const [centerId, setCenterId] = useState(defaultCenterId || centers[0]?.id || "");
@@ -313,6 +321,30 @@ export default function InspectClient({
       <p className="text-sm text-gray-500 mb-5">
         Scan the QR at each area, capture the required photographs, and submit.
       </p>
+
+      {/* Areas a manager sent back. Shown whether or not a round is running, so
+          it cannot be missed at the point the work would be redone. */}
+      {rejected.length > 0 && (
+        <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 p-4">
+          <div className="font-medium text-sm text-rose-900">
+            {rejected.length} area{rejected.length === 1 ? "" : "s"} need re-inspecting
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {rejected.map((r) => (
+              <div key={r.id} className="text-xs">
+                <span className="font-medium">{r.location.name}</span>
+                {r.rejectionReason && (
+                  <span className="text-gray-700"> — “{r.rejectionReason}”</span>
+                )}
+                <span className="text-gray-400"> ({r.rejectedBy?.name ?? "manager"})</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[11px] text-rose-800">
+            Scan each area again and submit fresh photographs.
+          </div>
+        </div>
+      )}
 
       {msg && (
         <div

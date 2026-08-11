@@ -45,6 +45,19 @@ export default async function MyPerformancePage() {
     computeEfficiency(me.id, from, new Date()),
   ]);
 
+  // Areas sent back to this person for re-inspection. Surfaced at the top of
+  // their own page because an unnoticed rejection is a rejection that never
+  // gets acted on.
+  const rejected = await prisma.inspectionVisit.findMany({
+    where: { userId: me.id, rejectedAt: { not: null } },
+    orderBy: { rejectedAt: "desc" },
+    take: 10,
+    include: {
+      location: { select: { name: true, center: { select: { name: true } } } },
+      rejectedBy: { select: { name: true } },
+    },
+  });
+
   const submitted = visits.filter((v) => v.status === "SUBMITTED").length;
   const flagged = visits.filter((v) => v.flags && v.flags !== "[]").length;
   const overdue = myIssues.filter((i) => i.dueAt && i.dueAt < new Date()).length;
@@ -66,6 +79,38 @@ export default async function MyPerformancePage() {
       <p className="text-sm text-gray-500 mb-5">
         Your own inspection and corrective-action record over the last 30 days.
       </p>
+
+      {rejected.length > 0 && (
+        <section className="rounded-xl border border-rose-300 bg-rose-50 p-4 mb-5">
+          <h2 className="font-medium text-sm text-rose-900 mb-1">
+            {rejected.length} area{rejected.length === 1 ? "" : "s"} sent back for re-inspection
+          </h2>
+          <p className="text-xs text-rose-800 mb-3">
+            Visit each area again, scan its QR code and submit fresh photographs.
+          </p>
+          <div className="space-y-2">
+            {rejected.map((v) => (
+              <div key={v.id} className="rounded-lg bg-white p-2.5">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium">{v.location.name}</span>
+                  <span className="text-xs text-gray-500">{v.location.center.name}</span>
+                  <span className="text-[10px] text-gray-400">
+                    by {v.rejectedBy?.name ?? "a manager"}
+                    {v.rejectedAt && ` · ${new Date(v.rejectedAt).toLocaleDateString()}`}
+                  </span>
+                </div>
+                {v.rejectionReason && (
+                  <div className="text-xs text-gray-700 mt-1">“{v.rejectionReason}”</div>
+                )}
+              </div>
+            ))}
+          </div>
+          <Link href="/housekeeping/inspect"
+            className="inline-block mt-3 rounded-md bg-rose-600 px-3 py-1.5 text-xs text-white">
+            Start re-inspection
+          </Link>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <Tile label="Rounds" value={String(rounds.length)} />

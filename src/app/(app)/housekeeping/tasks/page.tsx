@@ -30,6 +30,10 @@ export default async function TasksPage() {
   const withUrls = issues.map((i) => ({
     ...i,
     beforePhotoUrl: i.beforePhotoId ? photoUrl(i.beforePhotoId) : null,
+    // The after-photo has to come from the server too: the client's local
+    // preview is lost on reload, so without this an uploaded photo vanishes
+    // from the card the moment the list refreshes.
+    afterPhotoUrl: i.actions[0]?.afterPhotoId ? photoUrl(i.actions[0].afterPhotoId) : null,
   }));
 
   return <TasksClient initial={JSON.parse(JSON.stringify(withUrls))} />;
