@@ -170,3 +170,40 @@ function safeParse(v: string): string[] {
     return [];
   }
 }
+
+/**
+ * Every staff member who could be given work, whether or not their role
+ * currently grants the module.
+ *
+ * Distinct from `assignableUsers`, which is used for AUTOMATIC assignment and
+ * must only ever pick someone who can actually action the task. This one is for
+ * a human choosing from a dropdown: they may legitimately want to assign to a
+ * caretaker or an employee whose access simply has not been set up yet, so the
+ * list is complete and the caller shows a warning instead of hiding the person.
+ *
+ * CLIENT-role users are excluded — portal tenants are not staff.
+ */
+export async function assignableCandidates(
+  mod: string,
+  centerId: string,
+): Promise<{ id: string; name: string; role: string; hasAccess: boolean }[]> {
+  const roles = await rolesWithModule(mod);
+
+  const rows = await prisma.user.findMany({
+    where: {
+      active: true,
+      deletedAt: null,
+      role: { not: "CLIENT" },
+      OR: [{ centerId }, { centerId: null }],
+    },
+    select: { id: true, name: true, role: true, allowedModules: true },
+    orderBy: { name: "asc" },
+  });
+
+  return rows.map((u) => {
+    const override = parseAllowedModules(u.allowedModules);
+    const hasAccess =
+      override && override.length > 0 ? override.includes(mod) : roles.includes(u.role);
+    return { id: u.id, name: u.name, role: u.role, hasAccess };
+  });
+}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { logAction } from "@/lib/audit";
 import {
-  requireModule, isResponse, handleError, assertCenterAllowed,
+  requireModuleOrAssignee, isResponse, handleError, assertCenterAllowed,
 } from "@/lib/housekeeping/route-helpers";
 import {
   sniffImageMime, isAllowedMime, sha256Hex, storePhoto, photoUrl,
@@ -22,7 +22,8 @@ const MAX_BYTES = 12 * 1024 * 1024;
 // is really the "before" photo, or one recycled from another job, is the obvious
 // way to fake a completed task.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const u = await requireModule("hk_issues");
+  // The assignee may act on their own task even without the module.
+  const u = await requireModuleOrAssignee("hk_issues", params.id);
   if (isResponse(u)) return u;
 
   try {

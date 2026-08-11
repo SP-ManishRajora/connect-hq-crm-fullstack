@@ -9,10 +9,14 @@ export const dynamic = "force-dynamic";
 
 // The assignee-facing counterpart to /housekeeping/issues: only my work, ordered
 // by urgency, with the before image and the after-upload inline.
+//
+// Access rule is deliberately NOT the hk_issues module. Work can be assigned to
+// anyone — a caretaker, an accounts clerk covering a shift — and a task nobody
+// can open is a task nobody does. So: you may always see your OWN assigned work.
+// The page shows only `assigneeId: me.id`, so this exposes nothing else.
 export default async function TasksPage() {
   const me = await getSessionUser();
   if (!me) redirect("/login");
-  if (!(await canAccessAsync(me.role, "hk_issues", me.allowedModules))) redirect("/dashboard");
 
   const issues = await prisma.hkIssue.findMany({
     where: {
@@ -26,6 +30,12 @@ export default async function TasksPage() {
       actions: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
+
+  // Someone with neither module access nor any assigned work has no business
+  // here — send them home rather than showing an empty page.
+  if (issues.length === 0 && !(await canAccessAsync(me.role, "hk_issues", me.allowedModules))) {
+    redirect("/dashboard");
+  }
 
   const withUrls = issues.map((i) => ({
     ...i,

@@ -3,6 +3,10 @@ import { useState } from "react";
 import { SEVERITY_META, STATUS_META, type Severity, type IssueStatus } from "@/lib/housekeeping/issues";
 
 type Person = { id: string; name: string };
+// Assignee candidates carry their role and whether they can currently open the
+// module, so the dropdown can list everyone but flag those who would not see
+// the task until their access is fixed.
+type Candidate = { id: string; name: string; role: string; hasAccess: boolean };
 type Issue = {
   id: string; title: string; description: string | null;
   category: string; severity: Severity; status: IssueStatus;
@@ -23,7 +27,7 @@ const CATEGORIES = ["cleanliness", "maintenance", "safety", "consumables", "pres
 export default function IssuesClient({
   initial, centers, staff, locations, initialCenterId, meId, meRole,
 }: {
-  initial: Issue[]; centers: Center[]; staff: Person[]; locations: Loc[];
+  initial: Issue[]; centers: Center[]; staff: Candidate[]; locations: Loc[];
   initialCenterId: string; meId: string; meRole: string;
 }) {
   const [rows, setRows] = useState<Issue[]>(initial);
@@ -152,7 +156,18 @@ export default function IssuesClient({
             </select>
             <select value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })} className="rounded-md border px-3 py-2 text-sm">
               <option value="">— unassigned —</option>
-              {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <optgroup label="Can open Housekeeping">
+                {staff.filter((s) => s.hasAccess).map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} — {s.role}</option>
+                ))}
+              </optgroup>
+              {staff.some((s) => !s.hasAccess) && (
+                <optgroup label="No Housekeeping access yet">
+                  {staff.filter((s) => !s.hasAccess).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} — {s.role} (no access)</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             <button onClick={raise} disabled={busy !== null || form.title.trim().length < 3} className="rounded-md bg-brand-600 px-4 py-2 text-sm text-white disabled:opacity-40">
               Raise
@@ -288,16 +303,61 @@ export default function IssuesClient({
 
             {/* ---------- actions ---------- */}
             <div className="space-y-2">
-              {canManage && ["OPEN", "ASSIGNED", "REJECTED"].includes(detail.status) && (
-                <div className="flex gap-2">
+              {/* Reassignment. Available right through IN_PROGRESS, because staff
+                  go off shift, fall ill or hit something they cannot finish —
+                  and the work still has to land on someone. */}
+              {canManage && ["OPEN", "ASSIGNED", "REJECTED", "IN_PROGRESS"].includes(detail.status) && (
+                <div className="rounded-lg border p-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {detail.assignee ? "Reassign to" : "Assign to"}
+                    <span className="ml-1 font-normal text-gray-400">
+                      ({staff.length} staff)
+                    </span>
+                  </label>
                   <select
-                    defaultValue={detail.assignee?.id ?? ""}
-                    onChange={(e) => act(`/api/housekeeping/issues/${detail.id}/assign`, { assigneeId: e.target.value || null }, "Assignment updated.")}
-                    className="flex-1 rounded-md border px-3 py-2 text-sm"
+                    value={detail.assignee?.id ?? ""}
+                    onChange={(e) => {
+                      const picked = staff.find((s) => s.id === e.target.value);
+                      act(
+                        `/api/housekeeping/issues/${detail.id}/assign`,
+                        { assigneeId: e.target.value || null },
+                        !picked
+                          ? "Returned to the unassigned queue."
+                          : picked.hasAccess
+                            ? `Reassigned to ${picked.name}.`
+                            // Assigning still works, but they cannot open the
+                            // module — say so rather than let the task vanish.
+                            : `Assigned to ${picked.name}, but their role (${picked.role}) cannot open Housekeeping — grant it under Users → Roles or they will not see this task.`,
+                      );
+                    }}
+                    className="w-full rounded-md border px-3 py-2 text-sm"
                   >
                     <option value="">— unassigned —</option>
-                    {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    {/* Everyone who can act, first. */}
+                    <optgroup label="Can open Housekeeping">
+                      {staff.filter((s) => s.hasAccess).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} — {s.role}</option>
+                      ))}
+                    </optgroup>
+                    {staff.some((s) => !s.hasAccess) && (
+                      <optgroup label="No Housekeeping access yet">
+                        {staff.filter((s) => !s.hasAccess).map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} — {s.role} (no access)</option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
+                  {detail.status === "IN_PROGRESS" && detail.assignee && (
+                    <p className="mt-1.5 text-[11px] text-amber-700">
+                      {detail.assignee.name} has already started. Reassigning hands the job to
+                      someone else; the work so far stays on the record.
+                    </p>
+                  )}
+                  {detail.status === "REJECTED" && (
+                    <p className="mt-1.5 text-[11px] text-rose-700">
+                      This was sent back for rework — reassign it if someone else should redo it.
+                    </p>
+                  )}
                 </div>
               )}
 

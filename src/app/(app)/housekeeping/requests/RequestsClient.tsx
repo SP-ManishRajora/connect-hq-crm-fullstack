@@ -4,6 +4,7 @@ import { CR_STATUS_META, type CrStatus } from "@/lib/housekeeping/requests";
 import { analyseImage } from "@/lib/housekeeping/client-capture";
 
 type Person = { id: string; name: string };
+type Candidate = { id: string; name: string; role: string; hasAccess: boolean };
 type Req = {
   id: string; ticketNo: string; typeNameSnapshot: string;
   description: string | null; priority: string; status: CrStatus;
@@ -23,7 +24,7 @@ export default function RequestsClient({
   initial, staff, meId, meRole, centers, initialCenterId,
   focusId = null, scannedCode = null,
 }: {
-  initial: Req[]; staff: Person[]; meId: string; meRole: string;
+  initial: Req[]; staff: Candidate[]; meId: string; meRole: string;
   centers: { id: string; name: string }[]; initialCenterId: string;
   /** Request to open on arrival, handed over from the area sticker. */
   focusId?: string | null;
@@ -240,12 +241,29 @@ export default function RequestsClient({
 
             <div className="space-y-2">
               {canManage && !["CLOSED", "CANCELLED"].includes(detail.status) && (
-                <select defaultValue={detail.assignee?.id ?? ""}
-                  onChange={(e) => e.target.value && act(detail.id, "ASSIGN", { assigneeId: e.target.value })}
-                  className="w-full rounded-md border px-3 py-2 text-sm">
-                  <option value="">— assign to —</option>
-                  {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {detail.assignee ? "Reassign to" : "Assign to"}
+                    <span className="ml-1 font-normal text-gray-400">({staff.length} staff)</span>
+                  </label>
+                  <select defaultValue={detail.assignee?.id ?? ""}
+                    onChange={(e) => e.target.value && act(detail.id, "ASSIGN", { assigneeId: e.target.value })}
+                    className="w-full rounded-md border px-3 py-2 text-sm">
+                    <option value="">— assign to —</option>
+                    <optgroup label="Can open Housekeeping">
+                      {staff.filter((s) => s.hasAccess).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} — {s.role}</option>
+                      ))}
+                    </optgroup>
+                    {staff.some((s) => !s.hasAccess) && (
+                      <optgroup label="No Housekeeping access yet">
+                        {staff.filter((s) => !s.hasAccess).map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} — {s.role} (no access)</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
               )}
 
               {detail.status === "IN_PROGRESS" && (detail.assignee?.id === meId || canManage) && (

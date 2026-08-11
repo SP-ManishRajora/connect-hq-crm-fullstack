@@ -83,13 +83,30 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
   },
 ];
 
-export default function Shell({ user, children }: { user: SessionUser; children: React.ReactNode }) {
+export default function Shell({
+  user,
+  children,
+  hasAssignedWork = false,
+}: {
+  user: SessionUser;
+  children: React.ReactNode;
+  /** True when this person holds open assigned work, whatever their role. */
+  hasAssignedWork?: boolean;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
   const visibleGroups = NAV_GROUPS
-    .map((g) => ({ ...g, items: g.items.filter((i) => canAccess(user.role, i.mod, user.allowedModules)) }))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) =>
+        // My Tasks is shown to anyone holding assigned work, even without the
+        // module — the page itself only ever lists their own items.
+        (i.href === "/housekeeping/tasks" && hasAssignedWork) ||
+        canAccess(user.role, i.mod, user.allowedModules),
+      ),
+    }))
     .filter((g) => g.items.length > 0);
 
   return (

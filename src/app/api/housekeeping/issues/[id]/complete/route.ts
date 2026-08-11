@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { logAction } from "@/lib/audit";
 import {
-  requireModule, isResponse, parseBody, handleError, assertCenterAllowed,
+  requireModuleOrAssignee, isResponse, parseBody, handleError, assertCenterAllowed,
 } from "@/lib/housekeeping/route-helpers";
 import { completeActionSchema } from "@/lib/housekeeping/validators";
 import { assertTransition, type IssueStatus } from "@/lib/housekeeping/issues";
@@ -16,7 +16,8 @@ import { getIssueConfig } from "@/lib/housekeeping/settings";
 // `unableReason` is the escape hatch: work that genuinely cannot be done returns
 // the issue to ASSIGNED with the reason recorded, rather than being force-closed.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const u = await requireModule("hk_issues");
+  // The assignee may act on their own task even without the module.
+  const u = await requireModuleOrAssignee("hk_issues", params.id);
   if (isResponse(u)) return u;
 
   try {

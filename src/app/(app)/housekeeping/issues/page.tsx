@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccessAsync, assignableUsers } from "@/lib/roles";
+import { canAccessAsync, assignableCandidates } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { photoUrl } from "@/lib/housekeeping/storage";
@@ -55,7 +55,7 @@ export default async function IssuesPage({
     }),
     // Candidate assignees: anyone who can actually reach the issues module at
     // this centre. Derived from module access, so custom roles count too.
-    assignableUsers("hk_issues", centerId),
+    assignableCandidates("hk_issues", centerId),
     prisma.inspectionLocation.findMany({
       where: { centerId, deletedAt: null, active: true },
       select: { id: true, name: true },

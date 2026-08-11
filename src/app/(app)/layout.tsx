@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { parseAllowedModules } from "@/lib/rbac";
 import { modulesForRole } from "@/lib/roles";
+import { prisma } from "@/lib/db";
 import Shell from "@/components/Shell";
 import InstallPrompt from "@/components/InstallPrompt";
 
@@ -20,8 +21,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const override = parseAllowedModules(user.allowedModules);
   const allowedModules = override?.length ? override : await modulesForRole(user.role);
 
+  // Work can be assigned to anyone, including someone whose role has no
+  // housekeeping access. Without this they would have a task and no way to
+  // reach it, so "My Tasks" appears for anyone actually holding open work.
+  const hasAssignedWork =
+    (await prisma.hkIssue.count({
+      where: { assigneeId: user.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
+    })) > 0;
+
   return (
-    <Shell user={{ ...user, allowedModules }}>
+    <Shell user={{ ...user, allowedModules }} hasAssignedWork={hasAssignedWork}>
       {children}
       {/* Offered only to signed-in staff — never on the public login or QR pages. */}
       <InstallPrompt />

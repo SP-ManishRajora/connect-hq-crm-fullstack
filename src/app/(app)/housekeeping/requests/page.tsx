@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { canAccessAsync, assignableUsers } from "@/lib/roles";
+import { canAccessAsync, assignableCandidates } from "@/lib/roles";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import RequestsClient from "./RequestsClient";
@@ -61,7 +61,7 @@ export default async function RequestsPage({
         _count: { select: { photos: true } },
       },
     }),
-    assignableUsers("hk_requests", centerId),
+    assignableCandidates("hk_requests", centerId),
   ]);
 
   return (

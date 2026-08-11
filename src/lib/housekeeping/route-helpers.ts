@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { getSessionUser, type SessionUser } from "@/lib/auth";
 import { canAccessAsync } from "@/lib/roles";
@@ -60,4 +61,30 @@ export function assertCenterAllowed(u: SessionUser, centerId: string) {
   if (scope !== null && scope !== centerId) {
     throw Object.assign(new Error("You cannot access this centre"), { __status: 403 });
   }
+}
+
+/**
+ * Like `requireModule`, but also admits the person the issue is assigned to.
+ *
+ * Work can be given to anyone — a caretaker, someone covering a shift — and
+ * they must be able to start it, photograph it and submit it even if their role
+ * has no housekeeping module. The per-issue assignee check inside each route
+ * still applies, so this widens WHO may reach the route, not WHAT they may do.
+ */
+export async function requireModuleOrAssignee(
+  mod: string,
+  issueId: string,
+): Promise<SessionUser | NextResponse> {
+  const u = await getSessionUser();
+  if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  if (await canAccessAsync(u.role, mod, u.allowedModules)) return u;
+
+  const mine = await prisma.hkIssue.findFirst({
+    where: { id: issueId, assigneeId: u.id },
+    select: { id: true },
+  });
+  if (mine) return u;
+
+  return NextResponse.json({ error: "forbidden" }, { status: 403 });
 }

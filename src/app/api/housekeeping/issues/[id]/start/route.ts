@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { logAction } from "@/lib/audit";
 import {
-  requireModule, isResponse, handleError, assertCenterAllowed,
+  requireModuleOrAssignee, isResponse, handleError, assertCenterAllowed,
 } from "@/lib/housekeeping/route-helpers";
 import { assertTransition, type IssueStatus } from "@/lib/housekeeping/issues";
 
@@ -10,7 +10,8 @@ import { assertTransition, type IssueStatus } from "@/lib/housekeeping/issues";
 // Opens a CorrectiveAction row: one per attempt, so a rejected attempt keeps its
 // own record instead of being overwritten by the retry.
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
-  const u = await requireModule("hk_issues");
+  // The assignee may act on their own task even without the module.
+  const u = await requireModuleOrAssignee("hk_issues", params.id);
   if (isResponse(u)) return u;
 
   try {
