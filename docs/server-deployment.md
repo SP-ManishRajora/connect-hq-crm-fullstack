@@ -111,3 +111,73 @@ npm install && npx prisma generate && npm run build && pm2 restart coworking-erp
 ```
 
 > Note: rolling back code does **not** undo an applied DB migration. If a migration caused the issue, restore from a database backup or write a corrective migration — do not run `migrate reset` on production.
+
+
+
+Deploy to live — step by step
+
+Step 1 — Log into the server
+
+ssh ubuntu@crm.connecthq.co.in
+sudo su
+cd /var/www/coworking-erp
+
+
+Step 2 — Get the new code
+
+git checkout -- package-lock.json
+git pull origin main
+##The first line prevents the "local changes would be overwritten" error you hit before.
+
+Step 3 — Install packages
+
+npm ci
+##Use npm ci, not npm install. And never npm audit fix — that's what upgraded Next.js and broke things last time.
+
+Step 4 — Update the database
+
+npx prisma migrate deploy
+npx prisma generate
+##This adds 15 new tables/columns. It only adds — nothing is deleted.
+
+Step 5 — Build
+
+rm -rf .next
+npm run build
+##The rm -rf .next clears the old build. Skipping it can cause phantom errors.
+
+Wait for ✓ Compiled successfully. If it fails, stop and send me the error — don't continue.
+
+Step 6 — Restart
+
+pm2 restart coworking-erp
+
+Step 7 — Check it's working
+
+pm2 logs coworking-erp --lines 20
+Open https://crm.connecthq.co.in/login — you should see the eye icon in the password box.
+
+One-time setup (first deploy only)
+Add settings to the .env file
+
+nano /var/www/coworking-erp/.env
+Paste at the bottom, then save with Ctrl+O, Enter, Ctrl+X:
+
+
+HK_SIGNED_URL_SECRET="EI41VBI/bNBHlxhHnQ2b649vBJtiNDdijoEHGS2o+oU="
+HK_CRON_SECRET="gQAzDUDwCbtP48cKnPlFLoawedRUib7O+fS+HvVIMRI="
+HK_UPLOAD_DIR="/var/lib/coworking-erp/hk-uploads"
+HK_AI_DRIVER="stub"
+Create the photo folder
+
+mkdir -p /var/lib/coworking-erp/hk-uploads
+chown -R ubuntu:ubuntu /var/lib/coworking-erp/hk-uploads
+chmod 750 /var/lib/coworking-erp/hk-uploads
+Photos won't upload without this.
+
+Load the starting data
+
+npm run db:seed:roles
+npm run db:seed:hk
+npm run db:seed:cr
+Safe to run more than once.

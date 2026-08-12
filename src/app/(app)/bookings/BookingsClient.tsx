@@ -37,7 +37,9 @@ function toLocalInput(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function BookingsClient({ bookings, rooms, centers, clients = [], quota, me, canBookOnBehalf, canBackdate }: any) {
+const EMPTY_BACKLOG_ROW = { roomId: "", clientId: "", startTime: "", endTime: "", notes: "", error: "" };
+
+export default function BookingsClient({ bookings, rooms, centers, clients = [], quota, me, canBookOnBehalf, canBackdate, canBacklog }: any) {
   const router = useRouter();
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [show, setShow] = useState(false);
@@ -45,6 +47,14 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
   const [b, setB] = useState<any>({ roomId: "", startTime: "", endTime: "", notes: "", clientId: "", lateEntryReason: "" });
   const [room, setRoom] = useState<any>(EMPTY_ROOM);
   const [err, setErr] = useState<string | null>(null);
+
+  // ── Backlog (historic) entry — Center Manager and above ───────────────────
+  const [showBacklog, setShowBacklog] = useState(false);
+  const [backlogRows, setBacklogRows] = useState<any[]>([{ ...EMPTY_BACKLOG_ROW }]);
+  const [backlogReason, setBacklogReason] = useState("");
+  const [backlogErr, setBacklogErr] = useState<string | null>(null);
+  const [backlogMsg, setBacklogMsg] = useState<string | null>(null);
+  const [backlogSaving, setBacklogSaving] = useState(false);
 
   // Whether the currently-selected start time is in the past (drives the reason box).
   const startIsPast = useMemo(() => {
@@ -63,6 +73,16 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
   const canAddRoom = me && ["ADMIN", "OWNER", "CENTER_MANAGER"].includes(me.role);
 
   const isStaff = Boolean(canBookOnBehalf);
+
+  // A Center Manager may only backfill rooms in their own center (the API enforces
+  // this too — scoping the picker keeps them from choosing a row that will fail).
+  const backlogRooms = useMemo(
+    () =>
+      me?.role === "CENTER_MANAGER" && me?.centerId
+        ? rooms.filter((r: any) => r.centerId === me.centerId)
+        : rooms,
+    [rooms, me],
+  );
 
   const roomsInScope = useMemo(
     () => rooms.filter((r: any) => (centerFilter ? r.centerId === centerFilter : true)),
@@ -118,6 +138,115 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
     else { const j = await r.json().catch(() => ({})); alert(j.error || "Could not cancel"); }
   }
 
+  function setBacklogRow(i: number, patch: any) {
+    setBacklogRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch, error: "" } : r)));
+  }
+
+  // A backlog booking always sits inside a single day, so editing the date on
+  // either end mirrors it to the other while preserving that side's time.
+  // Value shape is the datetime-local "YYYY-MM-DDTHH:mm".
+  function setBacklogTime(i: number, field: "startTime" | "endTime", value: string) {
+    const other = field === "startTime" ? "endTime" : "startTime";
+    setBacklogRows((rows) =>
+      rows.map((r, idx) => {
+        if (idx !== i) return r;
+        const next: any = { ...r, [field]: value, error: "" };
+        const [date] = value.split("T");
+        const otherVal: string = r[other] || "";
+        if (date) {
+          if (otherVal.includes("T")) {
+            // Keep the other side's time, move it onto the newly-picked date.
+            next[other] = `${date}T${otherVal.split("T")[1]}`;
+          } else if (!otherVal && field === "startTime" && value.includes("T")) {
+            // Nothing on the end side yet — default to a 1-hour slot.
+            const [h, m] = value.split("T")[1].split(":");
+            const end = new Date(`${date}T00:00`);
+            end.setHours(Number(h) + 1, Number(m), 0, 0);
+            const pad = (n: number) => String(n).padStart(2, "0");
+            next[other] = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+          }
+        }
+        return next;
+      }),
+    );
+  }
+  function addBacklogRow() {
+    setBacklogRows((rows) => [...rows, { ...EMPTY_BACKLOG_ROW }]);
+  }
+  function removeBacklogRow(i: number) {
+    setBacklogRows((rows) => (rows.length === 1 ? [{ ...EMPTY_BACKLOG_ROW }] : rows.filter((_, idx) => idx !== i)));
+  }
+  function resetBacklog() {
+    setBacklogRows([{ ...EMPTY_BACKLOG_ROW }]);
+    setBacklogReason("");
+    setBacklogErr(null);
+    setBacklogMsg(null);
+  }
+
+  async function submitBacklog(e: React.FormEvent) {
+    e.preventDefault();
+    setBacklogErr(null);
+    setBacklogMsg(null);
+
+    if (!backlogReason.trim()) {
+      setBacklogErr("Please enter a reason for this backlog entry.");
+      return;
+    }
+    const filled = backlogRows.filter((r) => r.roomId && r.startTime && r.endTime);
+    if (filled.length === 0) {
+      setBacklogErr("Fill in at least one complete row (room, start and end).");
+      return;
+    }
+    // Client-side pre-check: backlog is for slots that already happened.
+    const future = filled.find((r) => new Date(r.startTime).getTime() >= Date.now());
+    if (future) {
+      setBacklogErr("Backlog entries must start in the past. Use “+ Book Room” for upcoming slots.");
+      return;
+    }
+
+    setBacklogSaving(true);
+    try {
+      const res = await fetch("/api/bookings/backlog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lateEntryReason: backlogReason.trim(),
+          rows: filled.map((r) => ({
+            roomId: r.roomId,
+            clientId: r.clientId || null,
+            startTime: r.startTime,
+            endTime: r.endTime,
+            notes: r.notes || null,
+          })),
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBacklogErr(j.error || "Failed to save backlog entries");
+        return;
+      }
+
+      // Keep only the rows that failed, annotated with their error, so the
+      // manager can correct and resubmit without retyping the good ones.
+      const failed: any[] = [];
+      (j.results || []).forEach((r: any) => {
+        if (!r.ok) failed.push({ ...filled[r.index], error: r.error || "Failed" });
+      });
+
+      if (failed.length === 0) {
+        setBacklogMsg(`${j.created} backlog booking${j.created === 1 ? "" : "s"} recorded.`);
+        setBacklogRows([{ ...EMPTY_BACKLOG_ROW }]);
+        setBacklogReason("");
+      } else {
+        setBacklogRows(failed);
+        setBacklogErr(`${j.created} saved, ${failed.length} could not be saved — see the errors below.`);
+      }
+      router.refresh();
+    } finally {
+      setBacklogSaving(false);
+    }
+  }
+
   // Open the booking form prefilled from a clicked calendar slot (1-hour default).
   function openSlot(day: Date, hour: number) {
     const start = new Date(day); start.setHours(hour, 0, 0, 0);
@@ -152,6 +281,11 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
             <button type="button" className={`px-3 py-1.5 text-sm ${view === "list" ? "bg-brand-600 text-white" : "bg-white"}`} onClick={() => setView("list")}>List</button>
           </div>
           {canAddRoom && <button type="button" className="btn-ghost" onClick={() => setShowAddRoom(!showAddRoom)}>+ Add Room</button>}
+          {canBacklog && (
+            <button type="button" className="btn-ghost" onClick={() => { setBacklogErr(null); setBacklogMsg(null); setShowBacklog(!showBacklog); }}>
+              + Backlog Entry
+            </button>
+          )}
           <button type="button" className="btn-primary" onClick={() => { setErr(null); setShow(!show); }}>+ Book Room</button>
         </div>
       </div>
@@ -207,6 +341,101 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => { setShowAddRoom(false); setRoom(EMPTY_ROOM); }}>Cancel</button>
             <button type="submit" className="btn-primary">Save Room</button>
+          </div>
+        </form>
+      )}
+
+      {showBacklog && canBacklog && (
+        <form onSubmit={submitBacklog} className="card space-y-3 border-amber-300">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="h2">Backlog Entry — record past bookings</h2>
+              <p className="muted text-xs">
+                For meeting room usage that already happened but was never entered. Every row is stored as a
+                late entry with the reason below and shows a <span className="badge bg-amber-100 text-amber-800">late entry</span> tag in the list view.
+              </p>
+            </div>
+            <button type="button" className="btn-ghost" onClick={addBacklogRow}>+ Add row</button>
+          </div>
+
+          <div>
+            <label className="label">Reason for backlog entry *</label>
+            <textarea
+              className="input"
+              rows={2}
+              required
+              value={backlogReason}
+              onChange={(e) => setBacklogReason(e.target.value)}
+              placeholder="e.g. Migrated from the front-desk register for July 2026"
+            />
+            <p className="muted text-xs mt-1">Applies to every row in this submission and is stored with each booking.</p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Room *</th>
+                  {isStaff && <th>Client</th>}
+                  <th>Start *</th>
+                  <th>End *</th>
+                  <th>Notes</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {backlogRows.map((r, i) => (
+                  <tr key={i} className={r.error ? "bg-rose-50" : ""}>
+                    <td>
+                      <select className="input" value={r.roomId} onChange={(e) => setBacklogRow(i, { roomId: e.target.value })}>
+                        <option value="">— Select —</option>
+                        {backlogRooms.map((rm: any) => (
+                          <option key={rm.id} value={rm.id}>{rm.center.name} — {rm.name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    {isStaff && (
+                      <td>
+                        <select className="input" value={r.clientId} onChange={(e) => setBacklogRow(i, { clientId: e.target.value })}>
+                          <option value="">— Walk-in / none —</option>
+                          {clients.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+                        </select>
+                      </td>
+                    )}
+                    <td>
+                      <input className="input" type="datetime-local" value={r.startTime} onChange={(e) => setBacklogTime(i, "startTime", e.target.value)} />
+                    </td>
+                    <td>
+                      <input className="input" type="datetime-local" value={r.endTime} onChange={(e) => setBacklogTime(i, "endTime", e.target.value)} />
+                    </td>
+                    <td>
+                      <input className="input" value={r.notes} onChange={(e) => setBacklogRow(i, { notes: e.target.value })} placeholder="Optional" />
+                    </td>
+                    <td>
+                      <button type="button" className="text-xs text-rose-600" onClick={() => removeBacklogRow(i)} title="Remove this row">Remove</button>
+                    </td>
+                  </tr>
+                ))}
+                {backlogRows.some((r) => r.error) && (
+                  <tr>
+                    <td colSpan={isStaff ? 6 : 5} className="text-xs text-rose-700">
+                      {backlogRows.filter((r) => r.error).map((r, i) => <div key={i}>• {r.error}</div>)}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="muted text-xs">Start and End share one date — picking a date on either side updates the other. Adjust the times independently.</p>
+
+          {backlogErr && <p className="text-red-600 text-sm">{backlogErr}</p>}
+          {backlogMsg && <p className="text-emerald-700 text-sm">{backlogMsg}</p>}
+
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={() => { setShowBacklog(false); resetBacklog(); }}>Close</button>
+            <button type="button" className="btn-ghost" onClick={resetBacklog}>Clear</button>
+            <button className="btn-primary" disabled={backlogSaving}>{backlogSaving ? "Saving…" : "Save Backlog Entries"}</button>
           </div>
         </form>
       )}
