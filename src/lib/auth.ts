@@ -101,3 +101,38 @@ export async function loginByEmail(email: string, password: string) {
   await createSession(session);
   return session;
 }
+
+// --- Mobile bearer tokens (Android staff app) --------------------------------
+//
+// The web app authenticates with an httpOnly cookie, which a native client
+// cannot hold. The mobile app instead sends `Authorization: Bearer <token>`.
+//
+// Two deliberate differences from the cookie session:
+//   * access tokens are SHORT lived (1h) because they cannot be revoked once
+//     issued — the refresh token is the revocable half, and it lives in a table
+//   * the payload carries `mob: true`, so a token minted for the app can be
+//     told apart from a cookie JWT in the audit trail
+const ACCESS_TTL = "1h";
+
+export async function createAccessToken(user: SessionUser) {
+  return new SignJWT({ ...user, mob: true })
+    .setProtectedHeader({ alg: ALG })
+    .setIssuedAt()
+    .setExpirationTime(ACCESS_TTL)
+    .sign(SECRET);
+}
+
+/**
+ * Resolve the caller from an Authorization header, falling back to the cookie.
+ *
+ * Order matters: an explicit bearer token wins over an ambient cookie so that a
+ * WebView carrying both is unambiguous.
+ */
+export async function getRequestUser(req?: {
+  headers: { get(name: string): string | null };
+}): Promise<SessionUser | null> {
+  const header = req?.headers.get("authorization") ?? "";
+  const m = /^Bearer\s+(.+)$/i.exec(header.trim());
+  if (m) return verifyToken(m[1]);
+  return getSessionUser();
+}

@@ -37,6 +37,7 @@
   ],
   "exclude": [
     "node_modules",
-    "coworking-erp-patch-*"
+    "coworking-erp-patch-*",
+    "mobile"
   ]
 }

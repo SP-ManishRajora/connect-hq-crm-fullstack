@@ -78,6 +78,8 @@ model User {
   hkRounds  InspectionRound[]    @relation("HkRoundUser")
   hkVisits  InspectionVisit[]    @relation("HkVisitUser")
   hkVisitsApproved InspectionVisit[] @relation("HkVisitApprover")
+  mobileRefreshTokens MobileRefreshToken[] @relation("HkMobileTokens")
+  mobilePushTokens    MobilePushToken[]    @relation("HkPushTokens")
   hkVisitsRejected InspectionVisit[] @relation("HkVisitRejecter")
   hkPhotos  InspectionPhoto[]    @relation("HkPhotoUser")
   hkDevices DeviceRegistration[] @relation("HkDeviceUser")
@@ -189,6 +191,11 @@ model Lead {
   budget      Float?
   notes       String? @db.Text
   status      String  @default("Lead")
+
+  // Captured by the connecthq.co.in website enquiry form.
+  city          String?
+  area          String?
+  workspaceType String?
   ownerId     String?
   owner       User?   @relation("LeadOwner", fields: [ownerId], references: [id])
   centerId    String?
@@ -1227,6 +1234,20 @@ model InspectionVisit {
   rejectedAt   DateTime?
   rejectionReason String?    @db.Text
 
+  // --- Offline capture (Android staff app) ----------------------------------
+  // The online path keeps its hard guarantee: `scannedAt` is server time and is
+  // never taken from the client. A visit captured offline cannot have that, so
+  // it is stored as a visibly WEAKER class of evidence rather than being
+  // silently mixed in with verified ones:
+  //   * capturedAt  — what the DEVICE claimed, never trusted, only recorded
+  //   * scannedAt   — still server time, but here it means "when it synced"
+  //   * the OFFLINE_CAPTURED flag is set so reports and the supervisor view can
+  //     show that server time was not witnessed for this visit
+  capturedAt      DateTime? // device-claimed capture time — untrusted, for display only
+  syncedAt        DateTime? // when the queued visit reached the server
+  offlineCaptured Boolean   @default(false)
+  clientVisitId   String?   @unique // app-generated id, makes sync idempotent on retry
+
   photos      InspectionPhoto[]
   issues      HkIssue[]
   areaSummary AreaSummary?
@@ -1234,6 +1255,7 @@ model InspectionVisit {
   @@index([roundId, sequence])
   @@index([locationId, scannedAt])
   @@index([userId, scannedAt])
+  @@index([offlineCaptured, syncedAt])
 }
 
 // Photo files live OUTSIDE public/ and are served only via signed, role-checked
@@ -2208,4 +2230,43 @@ model ClientReview {
   @@index([locationId, createdAt])
   @@index([clientId])
   @@index([status, createdAt])
+}
+
+
+// --- Mobile app (Android housekeeping staff) ---------------------------------
+
+// The revocable half of mobile auth. Access tokens are short-lived JWTs that
+// cannot be withdrawn once minted; this table is what an admin actually revokes,
+// and it is checked on every refresh. Tokens are stored HASHED — a database leak
+// must not hand over working credentials.
+model MobileRefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("HkMobileTokens", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique // sha256 of the opaque token, never the token itself
+  deviceId  String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  lastUsedAt DateTime?
+  revokedAt DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+// Expo push targets. Deliberately scoped to URGENT cleaning requests and
+// CRITICAL issues only (see docs/housekeeping-deferred.md D-30) — notifying on
+// every assignment is the failure mode that gets an app muted.
+model MobilePushToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation("HkPushTokens", fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique // Expo push token, e.g. ExponentPushToken[...]
+  deviceId   String?
+  platform   String   @default("android")
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  active     Boolean  @default(true)
+
+  @@index([userId, active])
 }

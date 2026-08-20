@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { logAction } from "@/lib/audit";
-import { getSessionUser } from "@/lib/auth";
 import { sendMail } from "@/lib/mail";
 import {
   parseBody, handleError, assertCenterAllowed,
+  resolveUser,
 } from "@/lib/housekeeping/route-helpers";
 import { appUrl } from "@/lib/housekeeping/alerts";
 
@@ -36,7 +36,7 @@ const schema = z
 // photograph; this judges the inspection of the area as a whole.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const u = await getSessionUser();
+    const u = await resolveUser();
     if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     if (!APPROVER_ROLES.includes(u.role)) {
       return NextResponse.json(

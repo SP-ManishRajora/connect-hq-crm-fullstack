@@ -32,7 +32,25 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;
-    const visitId = String(form.get("visitId") || "");
+
+    // The Android app queues photos offline against its OWN visit id, because
+    // the server id does not exist until the visit syncs. Either identifier is
+    // accepted; the client one is resolved to the real visit below.
+    const clientVisitId = String(form.get("clientVisitId") || "");
+    let visitId = String(form.get("visitId") || "");
+    if (!visitId && clientVisitId) {
+      const owner = await prisma.inspectionVisit.findUnique({
+        where: { clientVisitId },
+        select: { id: true },
+      });
+      if (!owner) {
+        throw Object.assign(
+          new Error("That visit has not been synced yet — sync visits before photographs"),
+          { __status: 409 },
+        );
+      }
+      visitId = owner.id;
+    }
     const slot = Number(form.get("slot") ?? -1);
     const angle = String(form.get("angle") || "").slice(0, 80);
 
@@ -119,7 +137,11 @@ export async function POST(req: NextRequest) {
     const captureRaw = String(form.get("captureAt") || "");
     const captureAt = captureRaw ? new Date(captureRaw) : null;
     const validCapture = captureAt && !Number.isNaN(captureAt.getTime()) ? captureAt : null;
-    if (validCapture) {
+    // On an ONLINE visit a large gap between the device's capture time and server
+    // time is a tamper signal. On an offline-captured visit it is the expected
+    // case — the queue may sit for hours — and flagging it would bury the real
+    // signal (OFFLINE_CAPTURED, already on the visit) under noise.
+    if (validCapture && !visit.offlineCaptured) {
       const skew = Math.abs(Date.now() - validCapture.getTime()) / 1000;
       if (skew > cfg.maxPhotoClockSkewSeconds) flags.push(VISIT_FLAGS.PHOTO_TIME_MISMATCH);
     }

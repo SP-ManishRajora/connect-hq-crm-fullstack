@@ -33,6 +33,7 @@ export const VISIT_FLAGS = {
   GALLERY_UPLOAD: "GALLERY_UPLOAD",          // manager exception, always visible
   PHOTO_TIME_MISMATCH: "PHOTO_TIME_MISMATCH", // device capture time far from server time
   INCOMPLETE_PHOTOS: "INCOMPLETE_PHOTOS",
+  OFFLINE_CAPTURED: "OFFLINE_CAPTURED",      // captured with no signal; server time not witnessed
 } as const;
 
 export type VisitFlag = (typeof VISIT_FLAGS)[keyof typeof VISIT_FLAGS];
@@ -50,6 +51,7 @@ export const FLAG_LABELS: Record<string, string> = {
   GALLERY_UPLOAD: "Gallery upload (camera bypassed)",
   PHOTO_TIME_MISMATCH: "Photo capture time differs from server time",
   INCOMPLETE_PHOTOS: "Fewer photographs than required",
+  OFFLINE_CAPTURED: "Captured offline — time reported by the device",
 };
 
 // Default photo angles when a location doesn't define its own.

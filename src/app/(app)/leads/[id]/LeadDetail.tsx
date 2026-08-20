@@ -228,6 +228,9 @@ export default function LeadDetail({ lead, centers }: any) {
               <div><span className="muted">Company:</span> {lead.company || "—"}</div>
               <div><span className="muted">Phone:</span> {lead.phone || "—"}</div>
               <div><span className="muted">Email:</span> {lead.email || "—"}</div>
+              <div><span className="muted">City:</span> {lead.city || "—"}</div>
+              <div><span className="muted">Area:</span> {lead.area || "—"}</div>
+              <div><span className="muted">Workspace type:</span> {lead.workspaceType || "—"}</div>
               <div><span className="muted">Seats needed:</span> {lead.seatsNeeded || "—"}</div>
               <div><span className="muted">Budget:</span> {lead.budget ? `₹${lead.budget}` : "—"}</div>
               <div><span className="muted">Notes:</span> {lead.notes || "—"}</div>

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { getSessionUser, type SessionUser } from "@/lib/auth";
+import { getSessionUser, verifyToken, type SessionUser } from "@/lib/auth";
 import { canAccessAsync } from "@/lib/roles";
 import { toErrorResponse } from "./types";
 
@@ -18,8 +19,26 @@ import { toErrorResponse } from "./types";
 // The synchronous canAccess() only ever sees step 3, so a custom role such as
 // HOUSEKEEPING — which exists only in AppRole — was shown a sidebar link and then
 // refused by the route behind it.
+/**
+ * Resolve the caller from either credential the module accepts.
+ *
+ * The web app sends an httpOnly cookie; the Android staff app cannot hold one
+ * and sends `Authorization: Bearer <access token>` instead. An explicit bearer
+ * token wins over an ambient cookie so a WebView carrying both is unambiguous.
+ *
+ * Both paths land on the same verified SessionUser, so every centre-scoping and
+ * module check below applies identically — the app gets no wider reach than the
+ * same person has in the browser.
+ */
+export async function resolveUser(): Promise<SessionUser | null> {
+  const auth = headers().get("authorization") ?? "";
+  const m = /^Bearer\s+(.+)$/i.exec(auth.trim());
+  if (m) return verifyToken(m[1]);
+  return getSessionUser();
+}
+
 export async function requireModule(mod: string): Promise<SessionUser | NextResponse> {
-  const u = await getSessionUser();
+  const u = await resolveUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!(await canAccessAsync(u.role, mod, u.allowedModules))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -75,7 +94,7 @@ export async function requireModuleOrAssignee(
   mod: string,
   issueId: string,
 ): Promise<SessionUser | NextResponse> {
-  const u = await getSessionUser();
+  const u = await resolveUser();
   if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   if (await canAccessAsync(u.role, mod, u.allowedModules)) return u;

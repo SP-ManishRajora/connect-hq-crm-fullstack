@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { logAction } from "@/lib/audit";
+import { pushCriticalIssue } from "@/lib/mobile/push";
 import {
   requireModule, isResponse, parseBody, handleError, assertCenterAllowed,
 } from "@/lib/housekeeping/route-helpers";
@@ -79,6 +80,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       } catch (e) {
         console.error("assignment notification failed (assignment stands):", e);
       }
+
+      // Additionally nudge the Android app, CRITICAL only (D-30). pushCriticalIssue
+      // filters on severity itself and never throws, so this cannot affect the
+      // assignment or the email above.
+      await pushCriticalIssue({
+        assigneeId: newAssignee.id,
+        issueId: row.id,
+        severity: row.severity,
+        title: row.title,
+        locationName: row.location?.name ?? null,
+      });
     }
 
     await logAction({

@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "ConnectHQ Housekeeping",
+    "slug": "manishrajora",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "connecthq-hk",
+    "splash": {
+      "backgroundColor": "#0f172a",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "in.connecthq.housekeeping",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "The app photographs each area as inspection evidence."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Your position proves you were physically present at the area you inspected."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://crm.connecthq.co.in",
+      "eas": {
+        "projectId": "940b35a7-2428-48d5-9816-3bcb187b11bf"
+      }
+    },
+    "owner": "spares-pazari"
+  }
+}

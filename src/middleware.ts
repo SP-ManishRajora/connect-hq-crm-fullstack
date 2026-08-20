@@ -21,6 +21,10 @@ const PUBLIC_PATHS = [
   // never discloses whether an account exists, and eligibility is re-checked on
   // verify before any session is issued.
   "/api/auth/otp",
+  // Android staff app sign-in. Public by necessity — the caller has no session
+  // yet. login returns one error for every failure mode; refresh rotates
+  // single-use tokens and reveals nothing about why a token was refused.
+  "/api/auth/mobile",
   // Visitor self check-in. Verifies an email and stamps arrival; issues no session.
   "/api/visitors/self",
   "/visit",
@@ -65,13 +69,31 @@ export async function middleware(req: NextRequest) {
   if (isPublic(pathname)) return NextResponse.next();
   if (pathname === "/") return NextResponse.redirect(new URL("/dashboard", req.url));
 
-  const token = req.cookies.get("erp_session")?.value;
-  if (!token) return NextResponse.redirect(new URL("/login", req.url));
+  // The Android staff app cannot hold an httpOnly cookie and authenticates with
+  // a bearer token instead. Two things have to differ for an API caller:
+  //
+  //   * the credential is read from the Authorization header, not the cookie
+  //   * a failure must be a 401 with a JSON body, NOT a redirect to /login — an
+  //     app that follows a redirect gets an HTML login page with status 200 and
+  //     cannot tell "expired token" from "success", so it never refreshes
+  //
+  // The route handlers re-verify independently (route-helpers.resolveUser), so
+  // this is a fast reject, never the only check.
+  const isApi = pathname.startsWith("/api/");
+  const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization")?.trim() ?? "");
+  const token = bearer?.[1] ?? req.cookies.get("erp_session")?.value;
+
+  const reject = () =>
+    isApi
+      ? NextResponse.json({ error: "unauthorized" }, { status: 401 })
+      : NextResponse.redirect(new URL("/login", req.url));
+
+  if (!token) return reject();
   try {
     await jwtVerify(token, SECRET);
     return NextResponse.next();
   } catch {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return reject();
   }
 }
 

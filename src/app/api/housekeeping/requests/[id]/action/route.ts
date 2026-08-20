@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { pushUrgentRequest } from "@/lib/mobile/push";
 import { logAction } from "@/lib/audit";
 import {
   requireModule, isResponse, parseBody, handleError, assertCenterAllowed,
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       where: { id: params.id },
       include: {
         location: { select: { id: true, name: true } },
-        type: { select: { requiresPhotos: true } },
+        type: { select: { requiresPhotos: true, name: true } },
         _count: { select: { photos: true } },
       },
     });
@@ -129,6 +130,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       note: b.note ?? (b.action === "UNABLE" ? "Unable to complete" : null),
       extra,
     });
+
+    // Nudge the Android app on assignment, URGENT only (D-30). pushUrgentRequest
+    // filters on priority itself and never throws, so the transition above — which
+    // is already committed — cannot be affected.
+    if (b.action === "ASSIGN" && b.assigneeId) {
+      await pushUrgentRequest({
+        assigneeId: b.assigneeId,
+        requestId: r.id,
+        priority: String((row as { priority?: string }).priority ?? r.priority ?? ""),
+        summary: r.type?.name ?? "Cleaning request",
+        locationName: r.location?.name ?? null,
+      });
+    }
 
     // Brief §29 — AI verification of the after-photograph. ADVISORY ONLY: the
     // completion has already been recorded above, and a negative verdict never

@@ -11,7 +11,7 @@ export const OPENAPI_VERSION = "1.0.0";
 type Method = "get" | "post" | "patch" | "delete";
 
 const AUTH = {
-  session: "Session cookie (`erp_session`). Enforced by middleware.",
+  session: "Session cookie (`erp_session`), or `Authorization: Bearer <access token>` from the Android staff app. Both resolve to the same user and the same module checks.",
   cron: "`x-cron-secret` header matching `HK_CRON_SECRET`, or an authenticated manager.",
   none: "**Public — no authentication.** Rate limited per IP and per QR code.",
 } as const;
@@ -110,6 +110,23 @@ export const ROUTES: RouteDoc[] = [
       "403": "not a centre manager or above, or you inspected this area yourself",
       "409": "not submitted yet, or already approved",
     } },
+
+  // ---- mobile app (Android staff) ----
+  { path: "/api/housekeeping/sync", method: "post", module: "Mobile app", auth: "session", scope: "hk_inspect",
+    summary: "Drain the app's offline queue — visits captured with no signal",
+    body: { visits: "OfflineVisit[] (max 50, each with clientVisitId + capturedAt)" },
+    responses: {
+      "200": "{ results: [{ clientVisitId, status: SYNCED|DUPLICATE|REJECTED, visitId?, flags?, error? }], synced, duplicates, rejected, serverTime }",
+      "403": "device revoked",
+    } },
+  { path: "/api/housekeeping/push/tokens", method: "post", module: "Mobile app", auth: "session", scope: "hk_inspect",
+    summary: "Register this device for push (URGENT requests and CRITICAL issues only)",
+    body: { token: "Expo push token", deviceId: "string?", platform: "string?" },
+    responses: { "200": "{ ok, id }" } },
+  { path: "/api/housekeeping/push/tokens", method: "delete", module: "Mobile app", auth: "session", scope: "hk_inspect",
+    summary: "Stop push on this device",
+    body: { token: "Expo push token" },
+    responses: { "200": "{ ok }" } },
 
   // ---- issues ----
   { path: "/api/housekeeping/issues", method: "get", module: "Issues", auth: "session", scope: "hk_issues",
