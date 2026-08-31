@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import { SyncBar } from "@/components/SyncBar";
 import { hk, type Location as HkLocation } from "@/api/housekeeping";
+import { ApiError } from "@/api/client";
 import { getDeviceId } from "@/api/auth";
 import { useSession } from "@/lib/session";
 import { CONFIG } from "@/lib/config";
@@ -78,10 +79,22 @@ export function InspectScreen() {
       setRoundId(r.id);
       setLocations(locs);
       setNotice(null);
-    } catch {
-      setNotice(
-        "Could not reach the server. You can still finish a round already open on this phone, but a new one needs a connection.",
-      );
+    } catch (e) {
+      // Report what actually went wrong. A blanket "could not reach the server"
+      // sends people to check their signal when the real answer was a 403 from a
+      // role that is missing a module — a problem no amount of walking towards a
+      // window will fix.
+      if (e instanceof ApiError && e.status !== 0) {
+        setNotice(
+          e.status === 403
+            ? `${e.message} — ask an administrator to check your housekeeping access.`
+            : e.message,
+        );
+      } else {
+        setNotice(
+          "Could not reach the server. You can still finish a round already open on this phone, but a new one needs a connection.",
+        );
+      }
     } finally {
       setLoading(false);
     }

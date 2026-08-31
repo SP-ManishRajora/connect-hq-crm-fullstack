@@ -8,12 +8,15 @@ import {
   handleError,
   centerScope,
   assertCenterAllowed,
+  requireAnyHousekeeping,
 } from "@/lib/housekeeping/route-helpers";
 import { createLocationSchema } from "@/lib/housekeeping/validators";
 
 // GET /api/housekeeping/locations?centerId=…&includeInactive=1
 export async function GET(req: NextRequest) {
-  const u = await requireModule("housekeeping");
+  // Any housekeeping role may READ the area list — it is the reference data
+  // every other screen depends on. Writes below still require hk_admin.
+  const u = await requireAnyHousekeeping();
   if (isResponse(u)) return u;
 
   try {

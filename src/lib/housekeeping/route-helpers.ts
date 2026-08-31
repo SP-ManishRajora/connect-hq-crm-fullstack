@@ -107,3 +107,35 @@ export async function requireModuleOrAssignee(
 
   return NextResponse.json({ error: "forbidden" }, { status: 403 });
 }
+
+/**
+ * Admit anyone with ANY housekeeping module.
+ *
+ * Some reference data — the list of inspection areas above all — is needed by
+ * every housekeeping screen: you cannot run a round, raise an issue against an
+ * area or answer a cleaning request without knowing which areas exist.
+ *
+ * Guarding that behind the `housekeeping` (dashboard) module alone locked out
+ * the HOUSEKEEPING role, which holds hk_inspect/hk_requests/hk_issues but not
+ * the dashboard — so staff could start a round and then not see a single area
+ * to inspect. This widens WHO may read the list; centre scoping below is
+ * unchanged, so it does not widen WHAT anyone sees.
+ */
+export async function requireAnyHousekeeping(): Promise<SessionUser | NextResponse> {
+  const u = await resolveUser();
+  if (!u) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const modules = [
+    "housekeeping",
+    "hk_inspect",
+    "hk_issues",
+    "hk_requests",
+    "hk_generator",
+    "hk_reports",
+    "hk_admin",
+  ];
+  for (const m of modules) {
+    if (await canAccessAsync(u.role, m, u.allowedModules)) return u;
+  }
+  return NextResponse.json({ error: "forbidden" }, { status: 403 });
+}

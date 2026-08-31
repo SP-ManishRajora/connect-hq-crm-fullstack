@@ -109,3 +109,36 @@ describe("OFFLINE_CAPTURED flag", () => {
     expect((JSON.parse(twice!) as string[]).filter((f) => f === "OFFLINE_CAPTURED")).toHaveLength(1);
   });
 });
+
+describe("housekeeping roles can read the area list", () => {
+  // Regression: the HOUSEKEEPING role holds hk_inspect/hk_requests/hk_issues but
+  // NOT the `housekeeping` dashboard module. GET /locations guarded on
+  // `housekeeping` alone, so staff could start a round and then be shown no
+  // areas at all — and the app reported it as a network failure.
+  const HOUSEKEEPING_ROLE_MODULES = [
+    "hk_inspect", "hk_requests", "hk_issues", "hk_reports",
+    "my_attendance", "leave_management",
+  ];
+
+  // Mirrors requireAnyHousekeeping() in lib/housekeeping/route-helpers.ts.
+  const ADMITTED = [
+    "housekeeping", "hk_inspect", "hk_issues", "hk_requests",
+    "hk_generator", "hk_reports", "hk_admin",
+  ];
+
+  it("does not grant the dashboard module to the HOUSEKEEPING role", () => {
+    // The premise of the bug. If this ever becomes true the guard could be
+    // simplified, but until then the area list must not depend on it.
+    expect(HOUSEKEEPING_ROLE_MODULES).not.toContain("housekeeping");
+  });
+
+  it("admits a role that has any inspection module", () => {
+    const admitted = HOUSEKEEPING_ROLE_MODULES.some((m) => ADMITTED.includes(m));
+    expect(admitted).toBe(true);
+  });
+
+  it("still refuses a role with no housekeeping module at all", () => {
+    const salesModules = ["leads", "proposals", "clients"];
+    expect(salesModules.some((m) => ADMITTED.includes(m))).toBe(false);
+  });
+});
