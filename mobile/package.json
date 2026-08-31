@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "typecheck": "tsc --noEmit",
-    "build:apk": "eas build --platform android --profile preview"
+    "build:apk": "eas build --platform android --profile preview",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "expo": "~51.0.28",

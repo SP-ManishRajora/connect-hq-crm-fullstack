@@ -2,6 +2,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import ClientPortal from "./ClientPortal";
+import { istMonthRange } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -61,12 +62,17 @@ export default async function Page() {
   let quota: any = null;
   if (client) {
     const totalHrs = (client.occupiedSeats || 0) * 2;
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const { start: monthStart, end: monthEnd } = istMonthRange(now);
     const used = await prisma.booking.findMany({
-      where: { clientId: client.id, startTime: { gte: monthStart, lte: monthEnd }, status: "CONFIRMED" },
+      where: { clientId: client.id, startTime: { gte: monthStart, lt: monthEnd }, status: "CONFIRMED" },
     });
-    quota = { totalHrs, usedHrs: used.reduce((s, x) => s + (x.durationHrs || 0), 0) };
+    // Labelled so the figure cannot be read as covering the bookings listed above
+    // it — that list includes future months, this number does not.
+    const monthLabel = new Intl.DateTimeFormat("en-IN", {
+      month: "long",
+      timeZone: "Asia/Kolkata",
+    }).format(now);
+    quota = { totalHrs, usedHrs: used.reduce((s, x) => s + (x.durationHrs || 0), 0), monthLabel };
   }
 
   const j = (x: any) => JSON.parse(JSON.stringify(x));

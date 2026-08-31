@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { CONFIG } from "./config";
+import { timeoutSignal } from "./timeoutSignal";
 import {
   getUser, saveUser, saveTokens, clearSession, getDeviceId,
   getRefreshToken, type MobileUser,
@@ -44,6 +45,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const timeout = timeoutSignal(20000);
     try {
       const res = await fetch(`${CONFIG.apiBaseUrl}/api/auth/mobile/login`, {
         method: "POST",
@@ -53,7 +55,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           password,
           deviceId: await getDeviceId(),
         }),
-        signal: AbortSignal.timeout(20000),
+        signal: timeout.signal,
       });
 
       // A server that has not been updated yet has no mobile login route, so its
@@ -94,6 +96,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           ? `${host} did not respond in time. Check your connection and try again.`
           : `Could not reach ${host}. Check your connection and try again.`;
       return { ok: false, error: msg };
+    } finally {
+      timeout.clear();
     }
   }, []);
 
@@ -108,7 +112,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refreshToken }),
-          signal: AbortSignal.timeout(8000),
+          signal: timeoutSignal(8000).signal,
         });
       } catch {
         /* revocation is best-effort; the token still expires on its own */

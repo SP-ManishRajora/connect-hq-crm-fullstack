@@ -1,9 +1,55 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fmtINR, fmtDateTime } from "@/lib/utils";
+import {
+  fmtINR,
+  fmtDateTime,
+  bookingWindowError,
+  BOOKING_OPEN_LABEL,
+  BOOKING_LAST_START_LABEL,
+} from "@/lib/utils";
+
+// Bounds for the START picker only — 19:30 is the last bookable slot, not a
+// closing time, so the END picker is left unbounded (a slot may run past it).
+// bookingWindowError() is the real check, and it runs again server-side.
+const START_MIN = "08:00";
+const START_MAX = "19:30";
 
 const CATS = ["COMPLAINT", "REQUEST", "IT", "FACILITY"];
+
+// Local-time "YYYY-MM-DD" / "YYYY-MM-DDTHH:mm" for the `min` attribute on the
+// date pickers. toISOString() is UTC and would shift the floor by the timezone
+// offset, letting an earlier-today slot through (or blocking a valid one).
+function localNow() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { date, dateTime: `${date}T${pad(d.getHours())}:${pad(d.getMinutes())}` };
+}
+
+// Field-level validation shared by the filter bar and the booking form.
+// Returns { start?, end? } keyed by field so each message renders under the input
+// it belongs to. Empty values are not errors here — "required" is handled
+// separately so the form does not shout at a field the user has not reached yet.
+function validateSlot(startStr: string, endStr: string) {
+  const errs: { start?: string; end?: string } = {};
+  const start = startStr ? new Date(startStr) : null;
+  const end = endStr ? new Date(endStr) : null;
+
+  if (startStr && (!start || isNaN(start.getTime()))) errs.start = "Enter a valid start time.";
+  if (endStr && (!end || isNaN(end.getTime()))) errs.end = "Enter a valid end time.";
+  if (errs.start || errs.end) return errs;
+
+  if (start) {
+    if (start.getTime() < Date.now()) errs.start = "Cannot book a slot in the past.";
+    else {
+      const w = bookingWindowError(start);
+      if (w) errs.start = w;
+    }
+  }
+  if (start && end && end <= start) errs.end = "End time must be after the start time.";
+  return errs;
+}
 
 function parseAmenities(json: string | null | undefined): string[] {
   if (!json) return [];
@@ -25,6 +71,7 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
   const [filters, setFilters] = useState({ date: "", start: "", end: "", capacity: "" });
   const [availability, setAvailability] = useState<Record<string, boolean> | null>(null);
   const [checking, setChecking] = useState(false);
+  const [filterMsg, setFilterMsg] = useState<string | null>(null);
 
   // Booking form
   const [booking, setBooking] = useState<any>({ roomId: "", startTime: "", endTime: "", notes: "" });
@@ -32,6 +79,32 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
   const [busy, setBusy] = useState(false);
 
   const remainingHrs = quota ? Math.max(0, quota.totalHrs - quota.usedHrs) : null;
+
+  // Floor for both pickers. Clients cannot back-date: the API rejects a past
+  // start (only ADMIN / CENTER_MANAGER may late-enter), so the UI must not
+  // offer one. Computed once per render — good enough for a picker floor.
+  const minNow = useMemo(() => localNow(), []);
+
+  // Live validation. Recomputed on every keystroke so the message appears as the
+  // user types rather than only after a failed submit.
+  const filterErrs = useMemo(
+    () =>
+      filters.date && (filters.start || filters.end)
+        ? validateSlot(
+            filters.start ? `${filters.date}T${filters.start}` : "",
+            filters.end ? `${filters.date}T${filters.end}` : "",
+          )
+        : {},
+    [filters.date, filters.start, filters.end],
+  );
+  const bookErrs = useMemo(
+    () => validateSlot(booking.startTime, booking.endTime),
+    [booking.startTime, booking.endTime],
+  );
+  const bookReady =
+    Boolean(booking.roomId && booking.startTime && booking.endTime) &&
+    !bookErrs.start &&
+    !bookErrs.end;
 
   // Rooms filtered by capacity + (if availability computed) by free/busy.
   const filteredRooms = useMemo(() => {
@@ -48,10 +121,21 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
   }
 
   async function checkAvailability() {
+    setFilterMsg(null);
+    if (!filters.date || !filters.start || !filters.end) {
+      setAvailability(null);
+      setFilterMsg("Pick a date, start and end time to check availability.");
+      return;
+    }
+    // The per-field errors are already on screen; this just blocks the request.
+    if (filterErrs.start || filterErrs.end) {
+      setAvailability(null);
+      return;
+    }
     const slot = slotFromFilters();
     if (!slot) {
       setAvailability(null);
-      alert("Pick a date, start and end time (end after start) to check availability.");
+      setFilterMsg("Pick a date, start and end time (end after start) to check availability.");
       return;
     }
     setChecking(true);
@@ -89,14 +173,21 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
     e.preventDefault();
     setBookErr(null);
     if (!booking.roomId) return setBookErr("Select a room.");
+    if (!booking.startTime || !booking.endTime) return setBookErr("Enter a start and end time.");
+    // Same checks that drive the inline messages, re-run here so a submit can
+    // never outrun them. The server validates again regardless.
+    const errs = validateSlot(booking.startTime, booking.endTime);
+    if (errs.start || errs.end) return setBookErr(errs.start || errs.end || "Invalid slot.");
+    const start = new Date(booking.startTime);
+    const end = new Date(booking.endTime);
     setBusy(true);
     const res = await fetch("/api/bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         roomId: booking.roomId,
-        startTime: new Date(booking.startTime).toISOString(),
-        endTime: new Date(booking.endTime).toISOString(),
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
         notes: booking.notes,
       }),
     });
@@ -160,7 +251,7 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
         <div className="card">
           <div className="text-xs muted uppercase tracking-wide">Quota remaining</div>
           <div className="text-2xl font-bold mt-1">{quota ? `${remainingHrs!.toFixed(1)} hrs` : "—"}</div>
-          {quota && <div className="muted text-xs">of {quota.totalHrs} hrs this month</div>}
+          {quota && <div className="muted text-xs">of {quota.totalHrs} hrs in {quota.monthLabel || "this month"}</div>}
         </div>
       </div>
 
@@ -186,19 +277,47 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
       <div className="card">
         <div className="flex justify-between items-center flex-wrap gap-2">
           <h2 className="h2">Available meeting rooms</h2>
-          {quota && (
-            <span className="text-xs muted">Quota: {quota.usedHrs.toFixed(1)}/{quota.totalHrs} hrs used</span>
-          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs muted">Slots from {BOOKING_OPEN_LABEL}; last booking {BOOKING_LAST_START_LABEL}</span>
+            {quota && (
+              <span className="text-xs muted">Quota{quota.monthLabel ? ` (${quota.monthLabel})` : ""}: {quota.usedHrs.toFixed(1)}/{quota.totalHrs} hrs used</span>
+            )}
+          </div>
         </div>
         <div className="grid sm:grid-cols-4 gap-2 mt-3">
-          <div><label className="label">Date</label><input className="input" type="date" value={filters.date} onChange={(e) => setFilters({ ...filters, date: e.target.value })} /></div>
-          <div><label className="label">From</label><input className="input" type="time" value={filters.start} onChange={(e) => setFilters({ ...filters, start: e.target.value })} /></div>
-          <div><label className="label">To</label><input className="input" type="time" value={filters.end} onChange={(e) => setFilters({ ...filters, end: e.target.value })} /></div>
+          <div><label className="label">Date</label><input className="input" type="date" min={minNow.date} value={filters.date} onChange={(e) => setFilters({ ...filters, date: e.target.value })} /></div>
+          <div>
+            <label className="label">From</label>
+            <input
+              className={`input ${filterErrs.start ? "border-red-500 focus:ring-red-500" : ""}`}
+              type="time" min={START_MIN} max={START_MAX} value={filters.start}
+              aria-invalid={Boolean(filterErrs.start)}
+              onChange={(e) => { setFilterMsg(null); setFilters({ ...filters, start: e.target.value }); }}
+            />
+            {filterErrs.start && <p className="text-red-600 text-xs mt-1">{filterErrs.start}</p>}
+          </div>
+          <div>
+            <label className="label">To</label>
+            <input
+              className={`input ${filterErrs.end ? "border-red-500 focus:ring-red-500" : ""}`}
+              type="time" value={filters.end}
+              aria-invalid={Boolean(filterErrs.end)}
+              onChange={(e) => { setFilterMsg(null); setFilters({ ...filters, end: e.target.value }); }}
+            />
+            {filterErrs.end && <p className="text-red-600 text-xs mt-1">{filterErrs.end}</p>}
+          </div>
           <div><label className="label">Min capacity</label><input className="input" type="number" min={1} value={filters.capacity} onChange={(e) => setFilters({ ...filters, capacity: e.target.value })} placeholder="Any" /></div>
         </div>
-        <div className="mt-2 flex gap-2">
-          <button className="btn-primary" onClick={checkAvailability} disabled={checking}>{checking ? "Checking…" : "Check availability"}</button>
+        <div className="mt-2 flex gap-2 items-center flex-wrap">
+          <button
+            className="btn-primary"
+            onClick={checkAvailability}
+            disabled={checking || Boolean(filterErrs.start || filterErrs.end)}
+          >
+            {checking ? "Checking…" : "Check availability"}
+          </button>
           {availability && <button className="btn-ghost" onClick={() => setAvailability(null)}>Clear</button>}
+          {filterMsg && <span className="text-red-600 text-xs">{filterMsg}</span>}
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
@@ -242,14 +361,34 @@ export default function ClientPortal({ user, client, tickets, notices, invoices,
               ))}
             </select>
           </div>
-          <div><label className="label">Start *</label><input className="input" type="datetime-local" required value={booking.startTime} onChange={(e) => setBooking({ ...booking, startTime: e.target.value })} /></div>
-          <div><label className="label">End *</label><input className="input" type="datetime-local" required value={booking.endTime} onChange={(e) => setBooking({ ...booking, endTime: e.target.value })} /></div>
+          <div>
+            <label className="label">Start *</label>
+            <input
+              className={`input ${bookErrs.start ? "border-red-500 focus:ring-red-500" : ""}`}
+              type="datetime-local" required min={minNow.dateTime} value={booking.startTime}
+              aria-invalid={Boolean(bookErrs.start)}
+              onChange={(e) => { setBookErr(null); setBooking({ ...booking, startTime: e.target.value }); }}
+            />
+            {bookErrs.start
+              ? <p className="text-red-600 text-xs mt-1">{bookErrs.start}</p>
+              : <p className="text-xs muted mt-1">Between {BOOKING_OPEN_LABEL} and {BOOKING_LAST_START_LABEL}</p>}
+          </div>
+          <div>
+            <label className="label">End *</label>
+            <input
+              className={`input ${bookErrs.end ? "border-red-500 focus:ring-red-500" : ""}`}
+              type="datetime-local" required min={booking.startTime || minNow.dateTime} value={booking.endTime}
+              aria-invalid={Boolean(bookErrs.end)}
+              onChange={(e) => { setBookErr(null); setBooking({ ...booking, endTime: e.target.value }); }}
+            />
+            {bookErrs.end && <p className="text-red-600 text-xs mt-1">{bookErrs.end}</p>}
+          </div>
           <div className="sm:col-span-2"><label className="label">Notes</label><input className="input" value={booking.notes} onChange={(e) => setBooking({ ...booking, notes: e.target.value })} /></div>
           {selectedRoom && parseAmenities(selectedRoom.amenities).length > 0 && (
             <div className="sm:col-span-2 text-xs muted">Amenities: {parseAmenities(selectedRoom.amenities).join(", ")}</div>
           )}
           {bookErr && <p className="sm:col-span-2 text-red-600 text-sm">{bookErr}</p>}
-          <div className="sm:col-span-2 flex justify-end"><button className="btn-primary" disabled={busy}>{busy ? "Booking…" : "Confirm booking"}</button></div>
+          <div className="sm:col-span-2 flex justify-end"><button className="btn-primary" disabled={busy || !bookReady}>{busy ? "Booking…" : "Confirm booking"}</button></div>
         </form>
       </div>
 

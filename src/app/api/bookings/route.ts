@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
+import { bookingWindowError, istMonthRange } from "@/lib/utils";
 
 // GET — list all bookings (visible to all logged-in users incl. clients)
 export async function GET() {
@@ -29,6 +30,15 @@ export async function POST(req: NextRequest) {
   }
   const durationHrs = (end.getTime() - start.getTime()) / 3600000;
   if (durationHrs <= 0) return NextResponse.json({ error: "Invalid time range" }, { status: 400 });
+
+  // Business-hours window (08:00-19:30 IST) applies to CLIENT self-service only.
+  // Staff book on the phone, for walk-ins and for after-hours events, so they are
+  // not constrained here. Enforced server-side because the portal's time pickers
+  // are only a convenience.
+  if (u.role === "CLIENT") {
+    const windowErr = bookingWindowError(start, end);
+    if (windowErr) return NextResponse.json({ error: windowErr }, { status: 400 });
+  }
 
   // Past (back-dated / late-entry) bookings:
   //   - Only ADMIN and CENTER_MANAGER may book a slot whose start is in the past.
@@ -88,10 +98,11 @@ export async function POST(req: NextRequest) {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (client) {
       const quotaHrs = (client.occupiedSeats || 0) * 2;
-      const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
-      const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+      // Bucketed by the month the BOOKING falls in (not today), so a booking made
+      // now for next month draws on next month's quota.
+      const { start: monthStart, end: monthEnd } = istMonthRange(start);
       const used = await prisma.booking.findMany({
-        where: { clientId, startTime: { gte: monthStart, lte: monthEnd }, status: "CONFIRMED" },
+        where: { clientId, startTime: { gte: monthStart, lt: monthEnd }, status: "CONFIRMED" },
       });
       const usedHrs = used.reduce((s, x) => s + x.durationHrs, 0);
       const remaining = Math.max(0, quotaHrs - usedHrs);

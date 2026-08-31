@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { istMonthRange } from "@/lib/utils";
 import { getSessionUser } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { logAction } from "@/lib/audit";
@@ -121,10 +122,9 @@ export async function POST(req: NextRequest) {
         const client = await prisma.client.findUnique({ where: { id: clientId } });
         if (client) {
           const quotaHrs = (client.occupiedSeats || 0) * 2;
-          const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
-          const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+          const { start: monthStart, end: monthEnd } = istMonthRange(start);
           const used = await prisma.booking.findMany({
-            where: { clientId, startTime: { gte: monthStart, lte: monthEnd }, status: "CONFIRMED" },
+            where: { clientId, startTime: { gte: monthStart, lt: monthEnd }, status: "CONFIRMED" },
           });
           const usedHrs = used.reduce((s, x) => s + x.durationHrs, 0);
           const remaining = Math.max(0, quotaHrs - usedHrs);

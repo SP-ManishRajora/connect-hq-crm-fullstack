@@ -45,7 +45,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Your position proves you were physically present at the area you inspected."
         }
-      ]
+      ],
+      "./plugins/withNetworkSecurityConfig"
     ],
     "extra": {
       "apiBaseUrl": "https://crm.connecthq.co.in",

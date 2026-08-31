@@ -1,4 +1,5 @@
 import { CONFIG } from "@/lib/config";
+import { timeoutSignal } from "@/lib/timeoutSignal";
 import {
   getAccessToken,
   getRefreshToken,
@@ -112,7 +113,7 @@ async function rawRequest(path: string, opts: RequestOptions, token: string | nu
     method: opts.method ?? "GET",
     headers,
     body,
-    signal: opts.signal ?? AbortSignal.timeout(opts.timeoutMs ?? 30000),
+    signal: opts.signal ?? timeoutSignal(opts.timeoutMs ?? 30000).signal,
   });
 }
 
