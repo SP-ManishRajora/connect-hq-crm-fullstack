@@ -8,11 +8,11 @@ import { fmtINR, fmtDateTime } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  AVAILABLE:   { label: "Available",   cls: "bg-emerald-100 text-emerald-700" },
-  OCCUPIED:    { label: "Occupied",    cls: "bg-rose-100 text-rose-700" },
-  RESERVED:    { label: "Reserved",    cls: "bg-amber-100 text-amber-700" },
+  AVAILABLE: { label: "Available", cls: "bg-emerald-100 text-emerald-700" },
+  OCCUPIED: { label: "Occupied", cls: "bg-rose-100 text-rose-700" },
+  RESERVED: { label: "Reserved", cls: "bg-amber-100 text-amber-700" },
   MAINTENANCE: { label: "Maintenance", cls: "bg-gray-200 text-gray-700" },
-  BLOCKED:     { label: "Blocked",     cls: "bg-gray-800 text-white" },
+  BLOCKED: { label: "Blocked", cls: "bg-gray-800 text-white" },
 };
 
 const TYPE_LABEL: Record<string, string> = {

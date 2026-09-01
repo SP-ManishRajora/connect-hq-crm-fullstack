@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fmtINR, fmtDateTime } from "@/lib/utils";
+import { fmtINR, fmtDateTime, istMonthRange } from "@/lib/utils";
 
 const EMPTY_ROOM = { centerId: "", name: "", capacity: "", hourlyRate: "", amenities: "" };
 
@@ -39,7 +39,7 @@ function toLocalInput(d: Date) {
 
 const EMPTY_BACKLOG_ROW = { roomId: "", clientId: "", startTime: "", endTime: "", notes: "", error: "" };
 
-export default function BookingsClient({ bookings, rooms, centers, clients = [], quota, me, canBookOnBehalf, canBackdate, canBacklog }: any) {
+export default function BookingsClient({ bookings, clientQuotas = {}, rooms, centers, clients = [], quota, me, canBookOnBehalf, canBackdate, canBacklog }: any) {
   const router = useRouter();
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const [show, setShow] = useState(false);
@@ -88,6 +88,19 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
     () => rooms.filter((r: any) => (centerFilter ? r.centerId === centerFilter : true)),
     [rooms, centerFilter],
   );
+
+  // Remaining quota for the client on a row, for the IST month that booking falls in.
+  // Same key the server builds: `${clientId}:${ISO of IST month start}`.
+  function quotaLeft(x: any) {
+    if (!x.clientId) return <span className="text-gray-400">—</span>;
+    const q = clientQuotas[`${x.clientId}:${istMonthRange(new Date(x.startTime)).start.toISOString()}`];
+    if (!q) return <span className="text-gray-400">—</span>;
+    return (
+      <span className={q.remainingHrs <= 0 ? "text-rose-600" : ""} title={`${q.usedHrs.toFixed(1)} of ${q.totalHrs} hrs used`}>
+        {q.remainingHrs.toFixed(1)} / {q.totalHrs} hrs
+      </span>
+    );
+  }
 
   const visibleBookings = useMemo(
     () =>
@@ -576,7 +589,7 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
       {view === "list" && (
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Room</th><th>Center</th><th>Booked By</th><th>Start</th><th>End</th><th>Hrs</th><th>Charge</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Room</th><th>Center</th><th>Booked By</th><th>Start</th><th>End</th><th>Hrs</th><th>Charge</th><th>Quota Left</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {visibleBookings.map((x: any) => (
                 <tr key={x.id}>
@@ -590,11 +603,12 @@ export default function BookingsClient({ bookings, rooms, centers, clients = [],
                   <td>{fmtDateTime(x.endTime)}</td>
                   <td>{x.durationHrs?.toFixed(1)}</td>
                   <td>{x.isChargeable ? fmtINR(x.chargedAmount) : "Within quota"}</td>
+                  <td>{quotaLeft(x)}</td>
                   <td>{x.status}</td>
                   <td>{me && x.bookedById === me.id && <button className="text-xs text-rose-600" onClick={() => cancelBooking(x.id)}>Cancel</button>}</td>
                 </tr>
               ))}
-              {visibleBookings.length === 0 && <tr><td colSpan={9} className="text-center text-gray-400 py-8">No bookings</td></tr>}
+              {visibleBookings.length === 0 && <tr><td colSpan={10} className="text-center text-gray-400 py-8">No bookings</td></tr>}
             </tbody>
           </table>
         </div>

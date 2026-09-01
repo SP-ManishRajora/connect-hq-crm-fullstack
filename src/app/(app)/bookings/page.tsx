@@ -47,9 +47,59 @@ export default async function Page() {
     }
   }
 
+  // Remaining meeting-room quota per client, per the IST month each booking falls in.
+  // Keyed `${clientId}:${YYYY-MM}` so a row can show the client's balance for its own month.
+  const clientQuotas: Record<string, { totalHrs: number; usedHrs: number; remainingHrs: number }> = {};
+  const bookingClientIds = Array.from(new Set(bookings.map((b) => b.clientId).filter(Boolean))) as string[];
+  if (bookingClientIds.length) {
+    const quotaClients = await prisma.client.findMany({
+      where: { id: { in: bookingClientIds } },
+      select: { id: true, occupiedSeats: true },
+    });
+    const seatHrs = new Map(quotaClients.map((c) => [c.id, (c.occupiedSeats || 0) * 2]));
+
+    // Every month that appears in the list, so used hours cover bookings beyond the 500 fetched.
+    const monthKeys = new Set<string>();
+    for (const b of bookings) {
+      if (!b.clientId) continue;
+      monthKeys.add(istMonthRange(b.startTime).start.toISOString());
+    }
+    const monthUsage = await Promise.all(
+      Array.from(monthKeys).map(async (iso) => {
+        const { start: monthStart, end: monthEnd } = istMonthRange(new Date(iso));
+        const rows = await prisma.booking.groupBy({
+          by: ["clientId"],
+          where: { clientId: { in: bookingClientIds }, startTime: { gte: monthStart, lt: monthEnd }, status: "CONFIRMED" },
+          _sum: { durationHrs: true },
+        });
+        return { monthStart, rows };
+      })
+    );
+    for (const { monthStart, rows } of monthUsage) {
+      const ym = monthStart.toISOString();
+      for (const r of rows) {
+        if (!r.clientId) continue;
+        const totalHrs = seatHrs.get(r.clientId) || 0;
+        const usedHrs = r._sum.durationHrs || 0;
+        clientQuotas[`${r.clientId}:${ym}`] = { totalHrs, usedHrs, remainingHrs: Math.max(0, totalHrs - usedHrs) };
+      }
+    }
+    // Clients with no confirmed usage in a listed month still have their full quota.
+    for (const b of bookings) {
+      if (!b.clientId) continue;
+      const ym = istMonthRange(b.startTime).start.toISOString();
+      const key = `${b.clientId}:${ym}`;
+      if (!clientQuotas[key]) {
+        const totalHrs = seatHrs.get(b.clientId) || 0;
+        clientQuotas[key] = { totalHrs, usedHrs: 0, remainingHrs: totalHrs };
+      }
+    }
+  }
+
   return (
     <BookingsClient
       bookings={JSON.parse(JSON.stringify(bookings))}
+      clientQuotas={clientQuotas}
       rooms={JSON.parse(JSON.stringify(rooms))}
       centers={JSON.parse(JSON.stringify(centers))}
       clients={JSON.parse(JSON.stringify(clients))}
