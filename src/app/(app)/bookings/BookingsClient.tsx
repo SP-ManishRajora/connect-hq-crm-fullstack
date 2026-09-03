@@ -37,6 +37,107 @@ function toLocalInput(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// A meeting always sits inside one day, so the form carries a single Date and two
+// 12-hour times. <input type="datetime-local"> renders in the browser locale and cannot
+// be forced to 12-hour, hence the explicit hour / minute / AM-PM selects. Values are
+// stored as the same "YYYY-MM-DDTHH:mm" strings the rest of the form and API use.
+// Add whole/part hours to a "YYYY-MM-DDTHH:mm" value, staying on the same calendar day.
+function addHoursDT(value: string, hrs: number) {
+  if (!value || !value.includes("T")) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  d.setMinutes(d.getMinutes() + Math.round(hrs * 60));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+// Meetings run in minutes/hours, not days — durations offered on the quick picker.
+const DURATIONS = [
+  { hrs: 0.5, label: "30 min" },
+  { hrs: 1, label: "1 hr" },
+  { hrs: 1.5, label: "1.5 hr" },
+  { hrs: 2, label: "2 hr" },
+  { hrs: 3, label: "3 hr" },
+];
+// Minutes are booked on the quarter hour, matching the calendar grid.
+const MINUTE_STEPS = ["00", "15", "30", "45"];
+const HOURS_12 = Array.from({ length: 12 }, (_, i) => String(i + 1));
+
+// The 12-hour clock alone (hour / minute / AM-PM); the date lives beside it.
+function Time12({ value, onChange, required }: { value: string; onChange: (v: string) => void; required?: boolean }) {
+  // `value` is a bare "HH:mm" (24h); the parent owns the shared date.
+  const [hStr, mStr = "00"] = (value || "").split(":");
+  const h24 = hStr === "" ? NaN : Number(hStr);
+  const hour12 = isNaN(h24) ? "" : String(h24 % 12 === 0 ? 12 : h24 % 12);
+  const minute = isNaN(h24) ? "00" : mStr.padStart(2, "0");
+  const ampm = !isNaN(h24) && h24 >= 12 ? "PM" : "AM";
+  // Emits "HH:mm" back up — the parent re-attaches the date.
+  const emitTime = (h: string, m: string, a: string) => {
+    if (!h) return onChange("");
+    let hh = Number(h) % 12;
+    if (a === "PM") hh += 12;
+    onChange(`${String(hh).padStart(2, "0")}:${(m || "00").padStart(2, "0")}`);
+  };
+  return (
+    <div className="flex gap-1 items-center">
+      <select className="input w-16 px-1" required={required} value={hour12} onChange={(e) => emitTime(e.target.value, minute, ampm)}>
+        <option value="">--</option>
+        {HOURS_12.map((h) => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span className="text-gray-400">:</span>
+      <select className="input w-16 px-1" value={minute || "00"} onChange={(e) => emitTime(hour12 || "9", e.target.value, ampm)}>
+        {MINUTE_STEPS.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <select className="input w-20 px-1" value={ampm} onChange={(e) => emitTime(hour12 || "9", minute, e.target.value)}>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </div>
+  );
+}
+
+// Current local time rounded UP to the next quarter hour, so the default start lands
+// on one of the 00/15/30/45 options the minute select offers.
+function nowRoundedUp() {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  const m = d.getMinutes();
+  const next = Math.ceil(m / 15) * 15;
+  d.setMinutes(next);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function todayLocalDate() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+// Duration in hours between two "YYYY-MM-DDTHH:mm" values, or null when the pair is
+// incomplete/invalid. Both sides are already 24h here — AM/PM was resolved on entry —
+// so a plain timestamp comparison is correct.
+function durationHrsBetween(startTime: string, endTime: string) {
+  if (!startTime || !endTime) return null;
+  const st = new Date(startTime).getTime();
+  const et = new Date(endTime).getTime();
+  if (isNaN(st) || isNaN(et)) return null;
+  return (et - st) / 3600000;
+}
+// Human label for a duration: "45 min", "1 hr", "1 hr 30 min", "2 hr".
+function fmtDuration(hrs: number) {
+  const mins = Math.round(hrs * 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h} hr`;
+  return `${h} hr ${m} min`;
+}
+// The stored value is "YYYY-MM-DDTHH:mm"; these split it into the parts the form edits.
+function datePart(v: string) {
+  return (v || "").split("T")[0] || "";
+}
+function timePart(v: string) {
+  return (v || "").split("T")[1] || "";
+}
+
 const EMPTY_BACKLOG_ROW = { roomId: "", clientId: "", startTime: "", endTime: "", notes: "", error: "" };
 
 export default function BookingsClient({ bookings, clientQuotas = {}, rooms, centers, clients = [], quota, me, canBookOnBehalf, canBackdate, canBacklog }: any) {
@@ -61,6 +162,43 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
     if (!b.startTime) return false;
     return new Date(b.startTime).getTime() < Date.now();
   }, [b.startTime]);
+
+  // Start and End share one date — a meeting runs in hours, never across days.
+  // Changing the date moves both ends onto it, keeping each side's time.
+  function setBookingDate(date: string) {
+    setB((prev: any) => {
+      if (!date) return { ...prev, startTime: "", endTime: "" };
+      const st = timePart(prev.startTime) || "09:00";
+      const et = timePart(prev.endTime) || "10:00";
+      return { ...prev, startTime: `${date}T${st}`, endTime: `${date}T${et}` };
+    });
+  }
+  // Set one side's time on the shared date. Moving the start carries the end along
+  // by the current duration, so the meeting length survives a start-time change.
+  function setBookingTime(field: "startTime" | "endTime", time: string) {
+    setB((prev: any) => {
+      const date = datePart(prev.startTime) || datePart(prev.endTime) || todayLocalDate();
+      if (!time) return { ...prev, [field]: "" };
+      const next = `${date}T${time}`;
+      if (field === "endTime") return { ...prev, endTime: next, startTime: prev.startTime || `${date}T${time}` };
+      // Start moved — shift the end by the same delta to preserve the duration.
+      const prevStart = prev.startTime ? new Date(prev.startTime).getTime() : NaN;
+      const prevEnd = prev.endTime ? new Date(prev.endTime).getTime() : NaN;
+      const keepHrs = !isNaN(prevStart) && !isNaN(prevEnd) && prevEnd > prevStart ? (prevEnd - prevStart) / 3600000 : 1;
+      return { ...prev, startTime: next, endTime: addHoursDT(next, keepHrs) };
+    });
+  }
+  // Signed booking length — negative/zero means End is at or before Start, which the
+  // range error below reports. The duration chips match only on a positive value.
+  const bookingSpanHrs = useMemo(() => durationHrsBetween(b.startTime, b.endTime), [b.startTime, b.endTime]);
+  const bookingDurationHrs = bookingSpanHrs !== null && bookingSpanHrs > 0 ? bookingSpanHrs : null;
+  // End must be strictly after Start. Times are stored 24h, so AM/PM is already applied.
+  const rangeError = useMemo(() => {
+    if (!b.startTime || !b.endTime || bookingSpanHrs === null) return null;
+    if (bookingSpanHrs < 0) return "End time cannot be earlier than the start time.";
+    if (bookingSpanHrs === 0) return "End time must be after the start time.";
+    return null;
+  }, [b.startTime, b.endTime, bookingSpanHrs]);
 
   // Filters
   const [centerFilter, setCenterFilter] = useState("");
@@ -102,6 +240,18 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
     );
   }
 
+  // Per-row backlog duration: green pill when valid, red message when End <= Start.
+  function backlogDurationCell(r: any) {
+    const hrs = durationHrsBetween(r.startTime, r.endTime);
+    if (hrs === null) return <span className="text-gray-400">—</span>;
+    if (hrs <= 0) return <span className="text-rose-600 text-xs">End must be after start</span>;
+    return (
+      <span className="badge bg-emerald-100 text-emerald-800" title={`${hrs.toFixed(2)} hrs`}>
+        {fmtDuration(hrs)}
+      </span>
+    );
+  }
+
   const visibleBookings = useMemo(
     () =>
       bookings.filter((x: any) => {
@@ -121,6 +271,10 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (rangeError) {
+      setErr(rangeError);
+      return;
+    }
     if (startIsPast && !canBackdate) {
       setErr("Bookings cannot be made for a past date/time.");
       return;
@@ -155,31 +309,33 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
     setBacklogRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch, error: "" } : r)));
   }
 
-  // A backlog booking always sits inside a single day, so editing the date on
-  // either end mirrors it to the other while preserving that side's time.
-  // Value shape is the datetime-local "YYYY-MM-DDTHH:mm".
-  function setBacklogTime(i: number, field: "startTime" | "endTime", value: string) {
-    const other = field === "startTime" ? "endTime" : "startTime";
+  // A backlog booking always sits inside a single day, so the row carries one date
+  // and two times. Setting the date moves both ends onto it, keeping their times.
+  function setBacklogDate(i: number, date: string) {
     setBacklogRows((rows) =>
       rows.map((r, idx) => {
         if (idx !== i) return r;
-        const next: any = { ...r, [field]: value, error: "" };
-        const [date] = value.split("T");
-        const otherVal: string = r[other] || "";
-        if (date) {
-          if (otherVal.includes("T")) {
-            // Keep the other side's time, move it onto the newly-picked date.
-            next[other] = `${date}T${otherVal.split("T")[1]}`;
-          } else if (!otherVal && field === "startTime" && value.includes("T")) {
-            // Nothing on the end side yet — default to a 1-hour slot.
-            const [h, m] = value.split("T")[1].split(":");
-            const end = new Date(`${date}T00:00`);
-            end.setHours(Number(h) + 1, Number(m), 0, 0);
-            const pad = (n: number) => String(n).padStart(2, "0");
-            next[other] = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
-          }
-        }
-        return next;
+        if (!date) return { ...r, startTime: "", endTime: "", error: "" };
+        const st = timePart(r.startTime) || "09:00";
+        const et = timePart(r.endTime) || "10:00";
+        return { ...r, startTime: `${date}T${st}`, endTime: `${date}T${et}`, error: "" };
+      }),
+    );
+  }
+  // Set one side's time on the row's shared date; moving the start carries the end
+  // along by the current duration so the meeting length is preserved.
+  function setBacklogTimeOnly(i: number, field: "startTime" | "endTime", time: string) {
+    setBacklogRows((rows) =>
+      rows.map((r, idx) => {
+        if (idx !== i) return r;
+        const date = datePart(r.startTime) || datePart(r.endTime) || todayLocalDate();
+        if (!time) return { ...r, [field]: "", error: "" };
+        const next = `${date}T${time}`;
+        if (field === "endTime") return { ...r, endTime: next, error: "" };
+        const prevStart = r.startTime ? new Date(r.startTime).getTime() : NaN;
+        const prevEnd = r.endTime ? new Date(r.endTime).getTime() : NaN;
+        const keepHrs = !isNaN(prevStart) && !isNaN(prevEnd) && prevEnd > prevStart ? (prevEnd - prevStart) / 3600000 : 1;
+        return { ...r, startTime: next, endTime: addHoursDT(next, keepHrs), error: "" };
       }),
     );
   }
@@ -208,6 +364,15 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
     const filled = backlogRows.filter((r) => r.roomId && r.startTime && r.endTime);
     if (filled.length === 0) {
       setBacklogErr("Fill in at least one complete row (room, start and end).");
+      return;
+    }
+    // End must be strictly after Start on every row (times are 24h, AM/PM already applied).
+    const badRange = filled.find((r) => {
+      const hrs = durationHrsBetween(r.startTime, r.endTime);
+      return hrs === null || hrs <= 0;
+    });
+    if (badRange) {
+      setBacklogErr("Every row's end time must be after its start time.");
       return;
     }
     // Client-side pre-check: backlog is for slots that already happened.
@@ -260,6 +425,16 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
     }
   }
 
+  // Open the booking form with the start defaulted to the CURRENT time (rounded to the
+  // next quarter hour) and a 1-hour slot. Recomputed on every open so a form reopened
+  // later shows the time now, not the time it was first opened. Seeded here rather than
+  // in useState so the server and client first render agree — new Date() would differ.
+  function openBookingForm() {
+    const start = nowRoundedUp();
+    setB((prev: any) => ({ ...prev, startTime: start, endTime: addHoursDT(start, 1), lateEntryReason: "" }));
+    setShow(true);
+  }
+
   // Open the booking form prefilled from a clicked calendar slot (1-hour default).
   function openSlot(day: Date, hour: number) {
     const start = new Date(day); start.setHours(hour, 0, 0, 0);
@@ -299,7 +474,7 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
               + Backlog Entry
             </button>
           )}
-          <button type="button" className="btn-primary" onClick={() => { setErr(null); setShow(!show); }}>+ Book Room</button>
+          <button type="button" className="btn-primary" onClick={() => { setErr(null); if (!show) openBookingForm(); else setShow(false); }}>+ Book Room</button>
         </div>
       </div>
 
@@ -390,8 +565,10 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
                 <tr>
                   <th>Room *</th>
                   {isStaff && <th>Client</th>}
+                  <th>Date *</th>
                   <th>Start *</th>
                   <th>End *</th>
+                  <th>Hrs</th>
                   <th>Notes</th>
                   <th></th>
                 </tr>
@@ -416,11 +593,15 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
                       </td>
                     )}
                     <td>
-                      <input className="input" type="datetime-local" value={r.startTime} onChange={(e) => setBacklogTime(i, "startTime", e.target.value)} />
+                      <input className="input" type="date" value={datePart(r.startTime) || datePart(r.endTime)} onChange={(e) => setBacklogDate(i, e.target.value)} />
                     </td>
                     <td>
-                      <input className="input" type="datetime-local" value={r.endTime} onChange={(e) => setBacklogTime(i, "endTime", e.target.value)} />
+                      <Time12 value={timePart(r.startTime)} onChange={(t) => setBacklogTimeOnly(i, "startTime", t)} />
                     </td>
+                    <td>
+                      <Time12 value={timePart(r.endTime)} onChange={(t) => setBacklogTimeOnly(i, "endTime", t)} />
+                    </td>
+                    <td className="whitespace-nowrap">{backlogDurationCell(r)}</td>
                     <td>
                       <input className="input" value={r.notes} onChange={(e) => setBacklogRow(i, { notes: e.target.value })} placeholder="Optional" />
                     </td>
@@ -431,7 +612,7 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
                 ))}
                 {backlogRows.some((r) => r.error) && (
                   <tr>
-                    <td colSpan={isStaff ? 6 : 5} className="text-xs text-rose-700">
+                    <td colSpan={isStaff ? 8 : 7} className="text-xs text-rose-700">
                       {backlogRows.filter((r) => r.error).map((r, i) => <div key={i}>• {r.error}</div>)}
                     </td>
                   </tr>
@@ -440,7 +621,7 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
             </table>
           </div>
 
-          <p className="muted text-xs">Start and End share one date — picking a date on either side updates the other. Adjust the times independently.</p>
+          <p className="muted text-xs">Each row is one day — pick the date once, then the start and end times.</p>
 
           {backlogErr && <p className="text-red-600 text-sm">{backlogErr}</p>}
           {backlogMsg && <p className="text-emerald-700 text-sm">{backlogMsg}</p>}
@@ -484,8 +665,38 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
               <p className="muted text-xs mt-1">Charges/quota apply to the selected client.</p>
             </div>
           )}
-          <div><label className="label">Start *</label><input className="input" type="datetime-local" required value={b.startTime} onChange={(e) => setB({ ...b, startTime: e.target.value })} /></div>
-          <div><label className="label">End *</label><input className="input" type="datetime-local" required value={b.endTime} onChange={(e) => setB({ ...b, endTime: e.target.value })} /></div>
+          <div className="sm:col-span-2">
+            <label className="label">Date *</label>
+            <input className="input" type="date" required value={datePart(b.startTime)} onChange={(e) => setBookingDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Start time *</label>
+            <Time12 required value={timePart(b.startTime)} onChange={(t) => setBookingTime("startTime", t)} />
+          </div>
+          <div>
+            <label className="label">End time *</label>
+            <Time12 required value={timePart(b.endTime)} onChange={(t) => setBookingTime("endTime", t)} />
+          </div>
+          <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
+            <span className="muted text-xs">Duration:</span>
+            {DURATIONS.map((d) => (
+              <button
+                key={d.hrs}
+                type="button"
+                className={`badge ${bookingDurationHrs === d.hrs ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                onClick={() => setB((prev: any) => ({ ...prev, endTime: addHoursDT(prev.startTime, d.hrs) }))}
+                disabled={!b.startTime}
+              >
+                {d.label}
+              </button>
+            ))}
+            {bookingDurationHrs !== null && (
+              <span className="badge bg-emerald-100 text-emerald-800 ml-auto" title={`${bookingDurationHrs.toFixed(2)} hrs`}>
+                {fmtDuration(bookingDurationHrs)} ({bookingDurationHrs.toFixed(1)} hrs)
+              </span>
+            )}
+          </div>
+          {rangeError && <p className="sm:col-span-2 text-rose-600 text-sm">{rangeError}</p>}
           {startIsPast && !canBackdate && (
             <p className="sm:col-span-2 text-rose-600 text-sm">Bookings cannot be made for a past date/time.</p>
           )}
@@ -498,7 +709,7 @@ export default function BookingsClient({ bookings, clientQuotas = {}, rooms, cen
           )}
           <div className="sm:col-span-2"><label className="label">Notes</label><input className="input" value={b.notes} onChange={(e) => setB({ ...b, notes: e.target.value })} /></div>
           {err && <p className="sm:col-span-2 text-red-600 text-sm">{err}</p>}
-          <div className="sm:col-span-2 flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={() => setShow(false)}>Cancel</button><button className="btn-primary">Confirm Booking</button></div>
+          <div className="sm:col-span-2 flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={() => setShow(false)}>Cancel</button><button className="btn-primary disabled:opacity-40" disabled={Boolean(rangeError)}>Confirm Booking</button></div>
         </form>
       )}
 
