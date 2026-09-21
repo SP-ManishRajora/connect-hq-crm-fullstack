@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { voiceUiEnabled } from "@/lib/voice";
 import LeadDetail from "./LeadDetail";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export default async function Page({ params }: { params: { id: string } }) {
       },
       visitors: true,
       proposals: true,
+      callLogs: {
+        include: { agent: { select: { name: true } } },
+        orderBy: { startedAt: "desc" },
+      },
     },
   });
   if (!lead) return notFound();
@@ -31,6 +36,7 @@ export default async function Page({ params }: { params: { id: string } }) {
       lead={JSON.parse(JSON.stringify(lead))}
       centers={JSON.parse(JSON.stringify(centers))}
       partners={JSON.parse(JSON.stringify(partners))}
+      callingEnabled={voiceUiEnabled()}
     />
   );
 }

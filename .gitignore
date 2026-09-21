@@ -18,5 +18,14 @@ public/uploads/
 # housekeeping inspection evidence — private, never served statically
 private-uploads/
 DOCUMENTATION.md
+# Internal documentation — kept on disk, not versioned.
+# NOTE: several code comments reference docs/ paths (e.g. src/lib/rbac.ts,
+# src/app/api/voice/webhook/route.ts). Those files exist locally but will not
+# be present in a fresh clone.
+docs/
 productGradePrompt.md
-.env.bak.1786100162
+# Local .env backups — these contain REAL secrets in plaintext.
+# Pattern-matched so future backups are covered without editing this file.
+.env.bak.*
+.env.backup*
+.env.*.bak

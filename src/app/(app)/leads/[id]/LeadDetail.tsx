@@ -7,11 +7,29 @@ import { fmtDateTime } from "@/lib/utils";
 
 const CHANNELS = ["CALL", "WHATSAPP", "EMAIL", "INTERNAL"];
 
-export default function LeadDetail({ lead, centers }: any) {
+const CALL_STATUS_LABEL: Record<string, string> = {
+  INITIATED: "Dialling",
+  RINGING: "Ringing",
+  ANSWERED: "Answered",
+  COMPLETED: "Connected",
+  NO_ANSWER: "No answer",
+  BUSY: "Busy",
+  FAILED: "Failed",
+  BLOCKED_DND: "Blocked (DND)",
+  ABANDONED: "Cancelled",
+  UNKNOWN: "Unknown",
+  CONSOLE: "Console (test)",
+};
+
+export default function LeadDetail({ lead, centers, callingEnabled = false }: any) {
   const router = useRouter();
   const [centerId, setCenterId] = useState(lead.centerId || "");
   const [body, setBody] = useState("");
   const [channel, setChannel] = useState("CALL");
+
+  // Click-to-call. The provider rings the rep first, then the lead — so the
+  // feedback below tells them to expect their own phone to ring.
+  const [calling, setCalling] = useState(false);
 
   // Inline editing of the lead's core fields (name/company/contact/seats/budget/notes).
   const [editingInfo, setEditingInfo] = useState(false);
@@ -134,6 +152,31 @@ export default function LeadDetail({ lead, centers }: any) {
     router.refresh();
   }
 
+  async function placeCall() {
+    if (calling) return;
+    setCalling(true);
+    try {
+      const res = await fetch("/api/voice/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: lead.id }),
+      });
+      const detail = await res.json().catch(() => ({}));
+      if (res.ok) {
+        alert(
+          detail.dryRun
+            ? "Test mode (VOICE_PROVIDER=console): no call was placed. It has been logged below and printed to the server console."
+            : "Calling you now — answer your phone and you'll be connected to the lead.",
+        );
+        router.refresh();
+      } else {
+        alert(`Could not place the call: ${detail.error || res.statusText}`);
+      }
+    } finally {
+      setCalling(false);
+    }
+  }
+
   async function addComment(e: React.FormEvent) {
     e.preventDefault();
     if (!body.trim()) return;
@@ -155,6 +198,17 @@ export default function LeadDetail({ lead, centers }: any) {
           <p className="muted">{lead.company} · {lead.phone} · {lead.email}</p>
         </div>
         <div className="flex gap-2">
+          {callingEnabled && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={placeCall}
+              disabled={calling || !lead.phone}
+              title={lead.phone ? "We ring you first, then connect you to the lead" : "This lead has no phone number"}
+            >
+              {calling ? "Calling you…" : "📞 Call"}
+            </button>
+          )}
           <Link href={`/visitors?leadId=${lead.id}`} className="btn-ghost">Add Visitor / KYC</Link>
           <Link href={`/proposals?leadId=${lead.id}`} className="btn-primary">Create Proposal</Link>
         </div>
@@ -290,6 +344,32 @@ export default function LeadDetail({ lead, centers }: any) {
           </div>
           <button type="button" className="btn-primary" onClick={updateCenter}>Save Center</button>
         </div>
+
+        {lead.callLogs?.length > 0 && (
+          <div className="card space-y-3">
+            <h2 className="h2">Calls</h2>
+            <div className="space-y-2">
+              {lead.callLogs.map((c: any) => (
+                <div key={c.id} className="border rounded-md p-2 text-sm">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="badge bg-gray-100 text-gray-700">{CALL_STATUS_LABEL[c.status] || c.status}</span>
+                    <span className="muted text-xs">{fmtDateTime(c.startedAt)}</span>
+                  </div>
+                  <div className="muted text-xs mt-1">
+                    {c.agent?.name ? `${c.agent.name} · ` : ""}
+                    {c.durationSec ? `${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : "not connected"}
+                  </div>
+                  {c.failureReason && <div className="muted text-xs mt-1">{c.failureReason}</div>}
+                  {c.recordingUrl && (
+                    <a href={c.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-brand-600 text-xs">
+                      Play recording ↗
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="card space-y-3">
           <h2 className="h2">Comments / Activity</h2>

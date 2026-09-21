@@ -67,6 +67,9 @@ model User {
 
   passwordResets ClientInvite[] @relation("UserResets")
 
+  // VoIP — calls this user placed (see docs/voip/level-1-click-to-call.md)
+  callsMade CallLog[] @relation("CallAgent")
+
   // Patch v4 — invites, password-reset requests, user transfers
   invitesIssued    UserInvite[]           @relation("InvitedBy")
   pwdResetRequests PasswordResetRequest[]
@@ -212,6 +215,48 @@ model Lead {
   comments  Comment[]
   visitors  Visitor[]
   proposals Proposal[]
+  callLogs  CallLog[]
+}
+
+// ============= VoIP / TELEPHONY =============
+// Structured record of every call placed from the CRM. Kept separate from Comment
+// (which is free text) so questions like "average call duration by rep" or "which
+// leads have we tried 3× without connecting" are answerable.
+// Provider: FreJun — see docs/voip/level-1-click-to-call.md and src/lib/voice.ts.
+model CallLog {
+  id String @id @default(cuid())
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  agentId String?
+  agent   User?   @relation("CallAgent", fields: [agentId], references: [id])
+
+  direction String @default("OUTBOUND") // "OUTBOUND" | "INBOUND"
+
+  // INITIATED | RINGING | ANSWERED | COMPLETED | NO_ANSWER | BUSY
+  // | FAILED | BLOCKED_DND | ABANDONED | UNKNOWN | CONSOLE
+  status String @default("INITIATED")
+
+  agentPhone String?
+  leadPhone  String?
+
+  provider String?
+  // FreJun's call_id. Unique so retried webhooks update rather than duplicate.
+  providerSid String? @unique
+
+  durationSec   Int?
+  recordingUrl  String? @db.Text
+  failureReason String? @db.Text
+
+  startedAt  DateTime  @default(now())
+  answeredAt DateTime?
+  endedAt    DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@index([leadId])
+  @@index([agentId])
+  @@index([startedAt])
 }
 
 // A channel partner FIRM: a Broker / Agent / IPC organisation. Holds many contact people.

@@ -31,6 +31,13 @@ const PUBLIC_PATHS = [
   "/api/invites",                  // patch v4 — public invite verify/accept (token subpaths)
   "/api/password-resets/use",      // patch v4 — public token-based password set
   "/api/leads/public",
+  // FreJun call-status / recording callbacks. Public by necessity — the caller
+  // is a telephony provider with no session. NOT unauthenticated: the route
+  // verifies an HMAC-SHA256 signature over method + URL + body using the app's
+  // client secret, and rejects anything it cannot verify (including when no
+  // secret is configured). Without this entry middleware 401s every delivery
+  // before the route sees it, so calls connect but never log.
+  "/api/voice/webhook",
   // Phase 9 — public client cleaning requests. Scoped to these three paths
   // only; every other /api/housekeeping/* route stays session-protected.
   // All three are rate-limited in-handler (src/lib/housekeeping/rate-limit.ts).
