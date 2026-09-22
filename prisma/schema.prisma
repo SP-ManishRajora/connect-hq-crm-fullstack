@@ -199,6 +199,25 @@ model Lead {
   city          String?
   area          String?
   workspaceType String?
+
+  // Campaign attribution, captured by theme.js on the website on first arrival
+  // and posted through by connecthqEmail.php. Stored as columns rather than
+  // folded into `notes` so paid-search performance is reportable, and so a lead
+  // that closes can be uploaded back to Google as an offline conversion — which
+  // needs the gclid it arrived with.
+  gclid       String? @db.Text
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmTerm     String?
+  utmContent  String?
+  landingPage String? @db.Text
+  referrer    String? @db.Text
+
+  // The website's own reference for this submission (CHQ-<ts>-<rand>), so one
+  // enquiry can be traced across the site logs, the sales inbox and the CRM.
+  websiteLeadId String?
+
   ownerId     String?
   owner       User?   @relation("LeadOwner", fields: [ownerId], references: [id])
   centerId    String?
@@ -216,6 +235,11 @@ model Lead {
   visitors  Visitor[]
   proposals Proposal[]
   callLogs  CallLog[]
+
+  // Campaign reporting groups by campaign over a date range; tracing looks a
+  // lead up by the reference the website generated for it.
+  @@index([utmCampaign, createdAt])
+  @@index([websiteLeadId])
 }
 
 // ============= VoIP / TELEPHONY =============

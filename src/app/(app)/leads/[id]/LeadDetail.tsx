@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { allowedNextStatuses } from "@/lib/leadStatus";
+import { attributionView } from "@/lib/leadAttribution";
 import { fmtDateTime } from "@/lib/utils";
 
 const CHANNELS = ["CALL", "WHATSAPP", "EMAIL", "INTERNAL"];
@@ -288,6 +289,7 @@ export default function LeadDetail({ lead, centers, callingEnabled = false }: an
               <div><span className="muted">Seats needed:</span> {lead.seatsNeeded || "—"}</div>
               <div><span className="muted">Budget:</span> {lead.budget ? `₹${lead.budget}` : "—"}</div>
               <div><span className="muted">Notes:</span> {lead.notes || "—"}</div>
+              <LeadAttribution lead={lead} />
             </>
           )}
 
@@ -471,6 +473,48 @@ export default function LeadDetail({ lead, centers, callingEnabled = false }: an
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/*
+ * Where this lead came from.
+ *
+ * The website persists gclid/utm_* on a visitor's first arrival, so a lead that
+ * lands from an ad, browses for a week and only then submits still carries the
+ * click that paid for it. Sales reads this to know whether an enquiry is a paid
+ * one before picking up the phone; finance needs the gclid to upload the deal
+ * back to Google as an offline conversion once it closes.
+ *
+ * Hidden entirely for organic and direct leads rather than rendered as a row of
+ * dashes — most leads have no attribution, and an empty section on every one of
+ * them would push the notes and status controls down the page for nothing.
+ */
+function LeadAttribution({ lead }: { lead: any }) {
+  const { show, paid, gclid, rows } = attributionView(lead);
+  if (!show) return null;
+
+  return (
+    <div className="pt-3 mt-3 border-t">
+      <div className="flex items-center gap-2">
+        <span className="muted">Attribution</span>
+        {paid && (
+          <span
+            className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800"
+            title={`Google Click ID: ${gclid}`}
+          >
+            Google Ads
+          </span>
+        )}
+      </div>
+      {rows.map(({ label, value }) => (
+        <div key={label}>
+          {/* Landing pages and referrers are full URLs and will not wrap on
+              their own, so they are allowed to break mid-string. */}
+          <span className="muted">{label}:</span>{" "}
+          <span className="break-all">{value}</span>
+        </div>
+      ))}
     </div>
   );
 }

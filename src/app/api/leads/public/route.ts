@@ -73,9 +73,30 @@ export async function POST(req: NextRequest) {
     return s ? s.slice(0, max) : null;
   };
 
+  // Campaign attribution, sent by connecthqEmail.php from the values theme.js
+  // captured on the visitor's first arrival. Every field is optional: forms on
+  // pages reached organically send none of it, and our own /lead-form sends
+  // none either. Caps are generous where the value is a URL or a gclid and
+  // tight where it is a short label, matching the column types.
+  //
+  // These are attacker-controlled — they originate in the query string — so
+  // they go through the same trim/cap as the rest of the free text.
+  const attribution = {
+    gclid: trim(b.gclid, 512),
+    utmSource: trim(b.utmSource, 191),
+    utmMedium: trim(b.utmMedium, 191),
+    utmCampaign: trim(b.utmCampaign, 191),
+    utmTerm: trim(b.utmTerm, 191),
+    utmContent: trim(b.utmContent, 191),
+    landingPage: trim(b.landingPage, 1000),
+    referrer: trim(b.referrer, 1000),
+    websiteLeadId: trim(b.websiteLeadId, 64),
+  };
+
   const lead = await prisma.lead.create({
     data: {
       source: "WEB_FORM",
+      ...attribution,
       name: trim(b.name, 200)!,
       email: trim(b.email, 200),
       phone: trim(b.phone, 40),
