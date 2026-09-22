@@ -50,6 +50,13 @@ const PUBLIC_PATHS = [
   "/api/housekeeping/reviews/request-otp",
   "/api/housekeeping/reviews/verify-otp",
   "/api/housekeeping/reviews/public",
+  // Website analytics beacons from connecthq.co.in. Public by necessity — the
+  // caller is a script in a visitor's browser, which cannot hold a secret.
+  // Nothing here is trusted: the route validates every event against a
+  // whitelist, caps the payload and rate-limits per IP, and it only ever
+  // writes to WebEvent. Without this entry middleware 401s every beacon and
+  // the analytics dashboard stays permanently empty.
+  "/api/track",
 ];
 
 function isPublic(pathname: string) {

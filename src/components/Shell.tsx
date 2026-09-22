@@ -21,6 +21,7 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
       { mod: "proposals", href: "/proposals", label: "Proposals", icon: "📄" },
       { mod: "clients", href: "/clients", label: "Clients", icon: "🤝" },
       { mod: "referrals", href: "/referrals", label: "Referrals", icon: "🎁" },
+      { mod: "analytics", href: "/analytics", label: "Website Analytics", icon: "📈" },
     ]
   },
   {

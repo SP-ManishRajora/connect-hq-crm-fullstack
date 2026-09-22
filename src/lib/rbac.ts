@@ -51,6 +51,11 @@ export const MODULE_ACCESS: Record<string, Role[]> = {
   // they only ever see and administer their OWN centre (see route-helpers.centerScope).
   hk_admin:       ["ADMIN", "OWNER", "CENTER_MANAGER"],                   // locations, QR, settings
 
+  // Website traffic and campaign performance. Sales and marketing need it to
+  // judge which campaigns produce real enquiries; it carries no client or
+  // financial data, so it sits alongside leads rather than under accounts.
+  analytics:    ["ADMIN", "OWNER", "MANAGER", "SALES"],
+
   cashflow:     ["ADMIN"],
   audit_logs:   ["ADMIN", "OWNER"],
   client_portal:["CLIENT"],

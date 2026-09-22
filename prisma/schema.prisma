@@ -2339,3 +2339,75 @@ model MobilePushToken {
 
   @@index([userId, active])
 }
+
+// ============= WEBSITE ANALYTICS =============
+// Raw visitor activity from connecthq.co.in, captured by assets/js/chq-track.js
+// and posted to /api/track. Self-hosted rather than read back from Google:
+// GA4's API returns aggregates only, so it can tell you a campaign produced 40
+// enquiries but never which lead was which. These rows carry the same
+// visitorId/sessionId the enquiry form submits, so a booked deal can be traced
+// to the session — and the ad click — that produced it.
+//
+// Expect this table to be the largest in the database: one row per page view.
+// It is pruned by retention (see docs/analytics.md) rather than kept forever.
+model WebEvent {
+  id String @id @default(cuid())
+
+  // page_view | phone_click | whatsapp_click | lead_submit | scroll | session_start
+  name String
+
+  // First-party ids from the visitor's own browser storage. Not Google's, and
+  // not personally identifying on their own: a visitorId is a random string
+  // this site generated, with no cross-site meaning.
+  visitorId String
+  sessionId String
+
+  // Where it happened. `path` is split out from `url` so grouping by page does
+  // not have to parse a query string in SQL.
+  path     String  @db.Text
+  url      String? @db.Text
+  title    String? @db.Text
+  referrer String? @db.Text
+
+  // Campaign attribution as it stood for this session — denormalised on purpose.
+  // A campaign gets renamed or a lead gets reassigned; what the visitor actually
+  // arrived on must not change retroactively, or last quarter's report rewrites
+  // itself.
+  gclid       String? @db.Text
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmTerm     String?
+  utmContent  String?
+
+  // Set on lead_submit, and on any event once the visitor has submitted: the
+  // website's own CHQ-<ts>-<rand> reference. This is the join back to Lead.
+  websiteLeadId String?
+
+  // Coarse client facts, for "which devices do enquiries come from".
+  device    String? // mobile | tablet | desktop
+  browser   String?
+  os        String?
+  country   String?
+  // Truncated to a /24 (or zeroed) before storage — see /api/track. Kept only
+  // to separate distinct visitors behind shared networks, never to locate one.
+  ipPrefix  String?
+
+  // Event-specific extras (scroll depth, which phone link, form id) as JSON, so
+  // a new event type does not need a migration.
+  meta String? @db.Text
+
+  // When it happened in the visitor's browser, vs when we stored it. Beacons
+  // sent as a page unloads can arrive late or be retried offline.
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  // Reporting: "page views per day", "events by campaign over a range",
+  // "this visitor's whole journey", and de-duplicating a retried beacon.
+  @@index([name, occurredAt])
+  @@index([utmCampaign, occurredAt])
+  @@index([visitorId, occurredAt])
+  @@index([sessionId])
+  @@index([websiteLeadId])
+  @@index([occurredAt])
+}
