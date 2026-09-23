@@ -94,7 +94,7 @@ export default async function AnalyticsPage({
             Traffic and campaign performance for connecthq.co.in, last {range.days} days.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           {RANGES.map((d) => (
             <Link
               key={d}
@@ -104,6 +104,13 @@ export default async function AnalyticsPage({
               {d}d
             </Link>
           ))}
+          {/* Off the sidebar on purpose: a debugging view for whoever is wiring
+              up the tracker, reachable from the report it explains. */}
+          {(me.role === "ADMIN" || me.role === "OWNER") && (
+            <Link href="/analytics/raw" className="btn-ghost text-sm ml-2" title="Inspect raw events — what the website is actually sending">
+              Raw events
+            </Link>
+          )}
         </div>
       </div>
 

@@ -213,3 +213,118 @@ export async function getLastEventAt(): Promise<Date | null> {
   });
   return last?.occurredAt ?? null;
 }
+
+/*
+ * ---------------------------------------------------------------------------
+ * Raw event inspection.
+ *
+ * Everything above answers "how is the site doing". The two below answer a
+ * different question: "is the tracker sending what we think it is". They exist
+ * because the aggregate dashboard cannot show that — a field the website never
+ * populates and a field it populates wrongly both render as a quiet zero, and
+ * the only way to tell them apart used to be an SSH session and a SQL prompt.
+ * ---------------------------------------------------------------------------
+ */
+
+export type RawEventRow = {
+  id: string;
+  occurredAt: Date;
+  createdAt: Date;
+  name: string;
+  visitorId: string;
+  sessionId: string;
+  path: string;
+  url: string | null;
+  title: string | null;
+  referrer: string | null;
+  gclid: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+  websiteLeadId: string | null;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+  ipPrefix: string | null;
+  meta: string | null;
+};
+
+/**
+ * The most recent events, unaggregated and unfiltered.
+ *
+ * Ordered by `createdAt`, not `occurredAt`: this view is for watching beacons
+ * land while wiring up the website, and a beacon queued offline then replayed
+ * carries an old `occurredAt` — ordering by it would hide the very event
+ * someone is waiting to see. Both are shown so the lag is visible.
+ */
+export async function getRecentEvents(limit = 100, name?: string): Promise<RawEventRow[]> {
+  const take = Math.min(Math.max(Math.floor(limit) || 100, 1), 500);
+  return prisma.webEvent.findMany({
+    where: name ? { name } : undefined,
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+}
+
+export type FieldCoverage = { field: string; filled: number; note: string };
+
+/**
+ * How many of the recent rows actually carry each optional field.
+ *
+ * This is the diagnostic the dashboard could never give: a zero here means the
+ * website is not sending that field at all, which is a fixable frontend bug,
+ * as opposed to a campaign genuinely having no traffic. Scoped to a recent
+ * window rather than all time, so a field fixed last week reads as working
+ * rather than being dragged down by months of older rows.
+ */
+export async function getFieldCoverage(r: Range): Promise<{ total: number; fields: FieldCoverage[] }> {
+  const [row] = await prisma.$queryRaw<
+    Record<string, bigint>[]
+  >`
+    SELECT COUNT(*)              AS total,
+           COUNT(gclid)          AS gclid,
+           COUNT(utmSource)      AS utmSource,
+           COUNT(utmMedium)      AS utmMedium,
+           COUNT(utmCampaign)    AS utmCampaign,
+           COUNT(utmTerm)        AS utmTerm,
+           COUNT(utmContent)     AS utmContent,
+           COUNT(referrer)       AS referrer,
+           COUNT(title)          AS title,
+           COUNT(websiteLeadId)  AS websiteLeadId,
+           COUNT(device)         AS device,
+           COUNT(meta)           AS meta
+      FROM WebEvent
+     WHERE createdAt >= ${r.from} AND createdAt <= ${r.to}`;
+
+  const n = (k: string) => Number(row?.[k] ?? 0);
+
+  return {
+    total: n("total"),
+    fields: [
+      { field: "utmSource", filled: n("utmSource"), note: "utm_source on the landing URL" },
+      { field: "utmMedium", filled: n("utmMedium"), note: "utm_medium — not shown on the dashboard yet" },
+      { field: "utmCampaign", filled: n("utmCampaign"), note: "Drives the campaign table" },
+      { field: "utmTerm", filled: n("utmTerm"), note: "Your Ads keyword — not shown yet" },
+      { field: "utmContent", filled: n("utmContent"), note: "Ad / creative variant — not shown yet" },
+      { field: "gclid", filled: n("gclid"), note: "Google Ads click id. Needed for offline conversions" },
+      { field: "referrer", filled: n("referrer"), note: "document.referrer" },
+      { field: "title", filled: n("title"), note: "Page title" },
+      { field: "websiteLeadId", filled: n("websiteLeadId"), note: "CHQ-… reference joining back to a Lead" },
+      { field: "device", filled: n("device"), note: "Derived server-side from the user-agent" },
+      { field: "meta", filled: n("meta"), note: "Per-event extras (scroll depth, form id)" },
+    ],
+  };
+}
+
+/** Event names seen recently, with counts — for the filter tabs. */
+export async function getEventNameCounts(r: Range): Promise<Slice[]> {
+  const rows = await prisma.$queryRaw<{ name: string; n: bigint }[]>`
+    SELECT name, COUNT(*) AS n
+      FROM WebEvent
+     WHERE createdAt >= ${r.from} AND createdAt <= ${r.to}
+     GROUP BY name
+     ORDER BY n DESC`;
+  return rows.map((x) => ({ label: x.name, n: Number(x.n) }));
+}
