@@ -218,6 +218,16 @@ model Lead {
   // enquiry can be traced across the site logs, the sales inbox and the CRM.
   websiteLeadId String?
 
+  // Offline conversion upload to Google Ads.
+  //
+  // When a lead reaches a paying stage we tell Google which click produced it,
+  // so its bidding learns from real revenue rather than from form fills. These
+  // three columns make that exactly-once and auditable: without them a retry
+  // would double-count a customer, and nobody could answer "was this one sent".
+  conversionUploadedAt   DateTime? // when Google accepted it
+  conversionUploadedName String?   // which conversion action it was sent as
+  conversionValue        Float?    // the value sent, in INR
+
   ownerId     String?
   owner       User?   @relation("LeadOwner", fields: [ownerId], references: [id])
   centerId    String?
@@ -240,6 +250,10 @@ model Lead {
   // lead up by the reference the website generated for it.
   @@index([utmCampaign, createdAt])
   @@index([websiteLeadId])
+  // The funnel report counts leads per stage over a range, and the offline
+  // conversion worklist asks "which won leads have not been uploaded yet".
+  @@index([status, createdAt])
+  @@index([conversionUploadedAt])
 }
 
 // ============= VoIP / TELEPHONY =============
@@ -273,6 +287,18 @@ model CallLog {
   recordingUrl  String? @db.Text
   failureReason String? @db.Text
 
+  // Where an INBOUND call came from, for "calls from ads" vs "calls from the
+  // website" in the funnel report. GOOGLE_ADS means the caller dialled a Google
+  // forwarding number, which is the only case Google can attribute to a click.
+  // WEBSITE is our own number tapped on the site; DIRECT is everything else.
+  // Null on outbound calls, which have no source to speak of.
+  callSource String? // GOOGLE_ADS | WEBSITE | DIRECT
+
+  // Google's click id, when the call came through a forwarding number that
+  // carried one. This is what makes a phone call uploadable as an offline
+  // conversion, exactly like a form lead's gclid.
+  gclid String? @db.Text
+
   startedAt  DateTime  @default(now())
   answeredAt DateTime?
   endedAt    DateTime?
@@ -281,6 +307,8 @@ model CallLog {
   @@index([leadId])
   @@index([agentId])
   @@index([startedAt])
+  // "Inbound calls from ads this month", for the funnel report.
+  @@index([direction, callSource, startedAt])
 }
 
 // A channel partner FIRM: a Broker / Agent / IPC organisation. Holds many contact people.

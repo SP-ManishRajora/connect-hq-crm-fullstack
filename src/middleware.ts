@@ -57,6 +57,11 @@ const PUBLIC_PATHS = [
   // writes to WebEvent. Without this entry middleware 401s every beacon and
   // the analytics dashboard stays permanently empty.
   "/api/track",
+  // Google Ads lead form webhook. Public by necessity — Google posts it and
+  // holds no session. Authenticated by the shared key it echoes in the body
+  // (GOOGLE_LEAD_FORM_KEY), compared in constant time; the route refuses
+  // outright when no key is configured rather than accepting anonymous writes.
+  "/api/leads/google-form",
 ];
 
 function isPublic(pathname: string) {
