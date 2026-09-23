@@ -1,0 +1,28 @@
+#DATABASE_URL="file:./dev.db"
+#DATABASE_URL="mysql://root:PmaInternal#2026@localhost:3306/coworking_erp"
+#DATABASE_URL="mysql://root:PmaInternal%232026@localhost:3306/connecthq_crm"
+DATABASE_URL="mysql://erp_app:PmaInternal%232026@localhost:3306/connecthq_crm"
+JWT_SECRET="change-me-in-production-use-a-long-random-string"
+ # APP_URL="http://localhost:3000"
+APP_URL=https://crm.connecthq.co.in
+
+# SMTP for sending emails (recurring invoices, rent revision reminders, proposals)
+SMTP_HOST=""
+SMTP_PORT="587"
+SMTP_USER=""
+SMTP_PASS=""
+SMTP_FROM="erp@your-coworking.com"
+
+# DigiLocker (KYC) — placeholder; integrate via partner API
+DIGILOCKER_CLIENT_ID=""
+DIGILOCKER_CLIENT_SECRET=""
+
+# WhatsApp Business API (for capturing client comments)
+WHATSAPP_API_URL=""
+WHATSAPP_API_TOKEN=""
+
+LEAD_WEBHOOK_SECRET=cc20ed81df8b96ab70a1ae4ade97e681f8ccb27e165356347c2cb554ca7b1911
+
+HK_SIGNED_URL_SECRET="EI41VBI/bNBHlxhHnQ2b649vBJtiNDdijoEHGS2o+oU="
+HK_CRON_SECRET="gQAzDUDwCbtP48cKnPlFLoawedRUib7O+fS+HvVIMRI="
+
