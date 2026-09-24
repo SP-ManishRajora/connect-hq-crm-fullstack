@@ -25,6 +25,7 @@ const NAV_GROUPS: { title: string; items: { mod: string; href: string; label: st
       // The funnel is what ad spend is judged on, so it earns its own entry
       // rather than living as a link inside the traffic report.
       { mod: "analytics", href: "/analytics/funnel", label: "Conversion Funnel", icon: "🎯" },
+      { mod: "analytics", href: "/analytics/utm", label: "UTM Explorer", icon: "🔎" },
       // /analytics/google is deliberately not linked here. It reads GA4 through a
       // Google Cloud service account, which nobody has set up — so the link only
       // ever led to a "not configured" panel. The page and src/lib/analytics/ga.ts
