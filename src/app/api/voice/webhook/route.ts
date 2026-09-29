@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isTerminalStatus, mapFrejunStatus, verifyFrejunWebhook } from "@/lib/voice";
+import { inboundFinalStatus, isInboundPayload, parseFrejunTime } from "@/lib/inboundCall";
+import { createInboundCall, inboundAgentUpdate, settleInboundCall } from "@/lib/inboundCallStore";
 
 // POST /api/voice/webhook — FreJun call event callbacks.
 //
@@ -61,18 +63,25 @@ export async function POST(req: NextRequest) {
   const ourId =
     typeof payload?.metadata?.transaction_id === "string" ? payload.metadata.transaction_id : null;
 
-  const call =
+  let call =
     (callId ? await prisma.callLog.findUnique({ where: { providerSid: callId } }) : null) ??
     (ourId ? await prisma.callLog.findUnique({ where: { id: ourId } }) : null);
 
+  // A call to our published number: the first event we hear about it creates
+  // its row (docs/voip/level-3-inbound-ivr.md).
+  if (!call && callId && isInboundPayload(payload)) {
+    call = await createInboundCall(payload, callId);
+  }
+
   if (!call) {
-    // Most likely an inbound call, or one placed outside this CRM. Nothing to
-    // update; acknowledge so FreJun stops retrying.
+    // An outbound call placed outside this CRM. Nothing to update; acknowledge
+    // so FreJun stops retrying.
     console.info("FreJun webhook for unknown call", { event, callId, ourId });
     return NextResponse.json({ ok: true, ignored: "unknown call" });
   }
 
-  const data: Record<string, unknown> = {};
+  const inbound = call.direction === "INBOUND";
+  const data: Record<string, unknown> = inbound ? await inboundAgentUpdate(call, payload) : {};
   if (callId && !call.providerSid) data.providerSid = callId;
   if (!call.provider) data.provider = "frejun";
 
@@ -85,30 +94,44 @@ export async function POST(req: NextRequest) {
   }
 
   if (event === "call.status" || event === "call.summary") {
-    const next = mapFrejunStatus(payload.call_status);
+    let next = mapFrejunStatus(payload.call_status);
 
     // Idempotency. FreJun retries, and events can arrive out of order. Once a
     // call is terminal, only another terminal status may change it — a late
     // "Call answered" must not resurrect a completed call. Without this, one
     // call becomes several timeline entries.
     const alreadyTerminal = isTerminalStatus(call.status);
-    const applyStatus = next !== "UNKNOWN" && (!alreadyTerminal || isTerminalStatus(next));
-    if (applyStatus) data.status = next;
 
     // FreJun reports duration in milliseconds.
     if (typeof payload.duration === "number" && payload.duration >= 0) {
       data.durationSec = Math.round(payload.duration / 1000);
     }
-    if (payload.answer_time) {
-      const t = new Date(payload.answer_time);
-      if (!isNaN(t.getTime())) data.answeredAt = t;
-    }
-    if (payload.end_time) {
-      const t = new Date(payload.end_time);
-      if (!isNaN(t.getTime())) data.endedAt = t;
-    }
+    const answeredAt = parseFrejunTime(payload.answer_time);
+    if (answeredAt) data.answeredAt = answeredAt;
+    const endedAt = parseFrejunTime(payload.end_time);
+    if (endedAt) data.endedAt = endedAt;
     if (typeof payload.recording_url === "string" && payload.recording_url) {
       data.recordingUrl = payload.recording_url;
+    }
+
+    // An inbound call nobody answered still arrives as "Call completed".
+    if (inbound) {
+      next = inboundFinalStatus(
+        next,
+        (data.answeredAt as Date | undefined) ?? call.answeredAt,
+        (data.durationSec as number | undefined) ?? call.durationSec,
+      );
+    }
+
+    const applyStatus = next !== "UNKNOWN" && (!alreadyTerminal || isTerminalStatus(next));
+    if (applyStatus) data.status = next;
+
+    // Inbound, first terminal event: match the caller to a lead and the call to
+    // a website tap, in the same transaction as the status change. The
+    // timeline entry is written there too.
+    if (inbound && applyStatus && isTerminalStatus(next) && !alreadyTerminal) {
+      await settleInboundCall(call, data);
+      return NextResponse.json({ ok: true });
     }
 
     const updated = await prisma.callLog.update({ where: { id: call.id }, data });
@@ -116,7 +139,7 @@ export async function POST(req: NextRequest) {
     // Write the timeline entry exactly once, when the call first reaches a
     // terminal state. Doing it at dial time would fill the timeline with calls
     // that never connected.
-    if (applyStatus && isTerminalStatus(next) && !alreadyTerminal && updated.leadId) {
+    if (!inbound && applyStatus && isTerminalStatus(next) && !alreadyTerminal && updated.leadId) {
       await prisma.comment.create({
         data: {
           leadId: updated.leadId,

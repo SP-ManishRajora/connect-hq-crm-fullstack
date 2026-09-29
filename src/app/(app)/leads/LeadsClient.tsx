@@ -7,7 +7,9 @@ import PartnerPicker from "@/components/PartnerPicker";
 import { isValidIndianPhone, isValidEmail } from "@/lib/validators";
 import { fmtDate } from "@/lib/utils";
 
-const SOURCE = ["WEB_FORM", "CALL", "WHATSAPP", "WALK_IN", "REFERRAL"];
+// WEBSITE_CALL leads are normally created from the Website Calls report, which
+// attaches the caller's campaign; listed here so a manual entry can use it too.
+const SOURCE = ["WEB_FORM", "WEBSITE_CALL", "CALL", "WHATSAPP", "WALK_IN", "REFERRAL"];
 
 const emptyForm = { source: "CALL", name: "", phone: "", email: "", company: "", seatsNeeded: "", budget: "", centerId: "", notes: "", sourceType: "", partnerContactId: "" };
 

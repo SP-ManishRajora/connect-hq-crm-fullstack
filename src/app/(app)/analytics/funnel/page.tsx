@@ -60,7 +60,8 @@ export default async function FunnelPage({
     { label: "WhatsApp clicks", value: counts.whatsappClicks, src: "Website", approx: true },
     { label: "Phone clicks", value: counts.phoneClicks, src: "Website", approx: true },
     { label: "Calls from ads", value: counts.callsFromAds, src: "Telephony", approx: false },
-    { label: "Calls from website", value: counts.callsFromWebsite, src: "Telephony", approx: false },
+    // Logged by sales from the Website Calls report, not by the phone system.
+    { label: "Calls from website", value: counts.callsFromWebsite, src: "Logged by sales", approx: false },
     { label: "Google lead forms", value: counts.googleLeadFormLeads, src: "Google Ads", approx: false },
   ];
 

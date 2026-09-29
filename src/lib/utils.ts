@@ -9,29 +9,34 @@ export function fmtINR(n: number) {
   }).format(n || 0);
 }
 
-export function fmtDate(d: Date | string | null | undefined) {
-  if (!d) return "—";
+// Dates are formatted by hand rather than with toLocaleString: Node and the
+// browser ship different ICU data, so even with a fixed locale and timeZone the
+// same date can render as "Sept"/"Sep" or "pm"/"PM" — a text mismatch that
+// breaks React hydration (#418/#423). Output is always IST.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const IST_OFFSET_MS = 330 * 60 * 1000;
+
+function toIST(d: Date | string | null | undefined): Date | null {
+  if (!d) return null;
   const dt = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(dt.getTime())) return "—";
-  // Fixed timeZone so server (UTC) and client (local) render identically — avoids
-  // React hydration mismatches.
-  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+  if (Number.isNaN(dt.getTime())) return null;
+  // Shift so the UTC getters read IST wall-clock values.
+  return new Date(dt.getTime() + IST_OFFSET_MS);
 }
 
-// Date + time, with a fixed locale and timezone so server and client render
-// identically (avoids React hydration mismatches from host-dependent defaults).
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+export function fmtDate(d: Date | string | null | undefined) {
+  const t = toIST(d);
+  if (!t) return "—";
+  return `${pad2(t.getUTCDate())} ${MONTHS[t.getUTCMonth()]} ${t.getUTCFullYear()}`;
+}
+
 export function fmtDateTime(d: Date | string | null | undefined) {
-  if (!d) return "—";
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return dt.toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "Asia/Kolkata",
-  });
+  const t = toIST(d);
+  if (!t) return "—";
+  const h = t.getUTCHours();
+  return `${fmtDate(d)}, ${pad2(h % 12 || 12)}:${pad2(t.getUTCMinutes())} ${h < 12 ? "am" : "pm"}`;
 }
 
 export function todayISO() {

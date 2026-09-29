@@ -218,6 +218,12 @@ model Lead {
   // enquiry can be traced across the site logs, the sales inbox and the CRM.
   websiteLeadId String?
 
+  // The phone_click WebEvent a salesperson matched this lead to, from the
+  // Website Calls report. Unique so one tap cannot be logged as two leads. A
+  // plain id rather than a relation: WebEvent rows are analytics and may be
+  // pruned, and the lead must survive that with its attribution intact.
+  phoneClickEventId String? @unique
+
   // Offline conversion upload to Google Ads.
   //
   // When a lead reaches a paying stage we tell Google which click produced it,
@@ -298,6 +304,12 @@ model CallLog {
   // carried one. This is what makes a phone call uploadable as an offline
   // conversion, exactly like a form lead's gclid.
   gclid String? @db.Text
+
+  // The website phone tap (a phone_click WebEvent) this inbound call was
+  // matched to. Unique so one tap is never credited with two calls. A plain id
+  // rather than a relation, for the same reason as Lead.phoneClickEventId:
+  // WebEvent rows may be pruned and the call must keep its attribution.
+  phoneClickEventId String? @unique
 
   startedAt  DateTime  @default(now())
   answeredAt DateTime?
