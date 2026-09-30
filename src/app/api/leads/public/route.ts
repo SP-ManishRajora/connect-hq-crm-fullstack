@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { turnstilePassed, verifyTurnstile } from "@/lib/turnstile";
 
 // Public, unauthenticated lead capture (used by /lead-form and your website embed).
 //
@@ -34,22 +35,32 @@ function sweep() {
   for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k);
 }
 
-function authorized(req: NextRequest): boolean {
+// "server": a caller holding the shared secret (the website's PHP, which has
+// already run its own rate limit, link filter and captcha).
+// "browser": anyone else that is let in — our own /lead-form page, or every
+// caller while LEAD_WEBHOOK_SECRET is unset. These get the spam checks.
+function authorized(req: NextRequest): "server" | "browser" | null {
   const secret = process.env.LEAD_WEBHOOK_SECRET;
-  if (!secret) return true; // not configured → behave as before (open)
+  if (!secret) return "browser"; // not configured → behave as before (open)
 
-  if (req.headers.get("x-lead-secret") === secret) return true;
+  if (req.headers.get("x-lead-secret") === secret) return "server";
 
   // Allow our own lead-form page: same-origin browser post.
   const origin = req.headers.get("origin");
   const appUrl = process.env.APP_URL;
-  if (origin && appUrl && origin === appUrl.replace(/\/$/, "")) return true;
+  if (origin && appUrl && origin === appUrl.replace(/\/$/, "")) return "browser";
 
-  return false;
+  return null;
 }
 
+// Visitor-typed fields must not carry links — real enquiries never need one,
+// link spam ("graph.org/Super-promo-code...") always does.
+const LINK = /(https?:\/\/|www\.|\b[a-z0-9-]+\.[a-z]{2,}\/)/i;
+const TEXT_FIELDS = ["name", "email", "phone", "company", "city", "area", "workspaceType", "notes"];
+
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) {
+  const caller = authorized(req);
+  if (!caller) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -57,14 +68,32 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
-  sweep();
-  if (rateLimited(ip)) {
-    return NextResponse.json({ error: "Too many submissions. Please try again later." }, { status: 429 });
+
+  // Server-to-server posts all arrive from the website's one IP, so a per-IP
+  // limit would cap the whole site at RATE_LIMIT leads per window.
+  if (caller === "browser") {
+    sweep();
+    if (rateLimited(ip)) {
+      return NextResponse.json({ error: "Too many submissions. Please try again later." }, { status: 429 });
+    }
   }
 
   const b = await req.json().catch(() => ({}));
   if (!b.name || (!b.email && !b.phone)) {
     return NextResponse.json({ error: "Provide name and (email or phone)" }, { status: 400 });
+  }
+
+  if (caller === "browser") {
+    if (TEXT_FIELDS.some((f) => LINK.test(String(b[f] ?? "")))) {
+      return NextResponse.json({ error: "Please remove any links from your enquiry." }, { status: 422 });
+    }
+    const verdict = await verifyTurnstile(b.turnstileToken, ip);
+    if (!turnstilePassed(verdict)) {
+      return NextResponse.json(
+        { error: "We could not verify your submission. Please refresh and try again." },
+        { status: 403 },
+      );
+    }
   }
 
   // Cap free-text so a bot can't write novels into the CRM.

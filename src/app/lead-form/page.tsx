@@ -1,20 +1,66 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
+
+// Public Turnstile site key (not a secret). Unset → no widget, and the API
+// skips the check while TURNSTILE_SECRET_KEY is unset too.
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      reset: (id?: string) => void;
+    };
+  }
+}
 
 export default function LeadForm() {
   const [centers, setCenters] = useState<any[]>([]);
   const [form, setForm] = useState<any>({ name: "", phone: "", email: "", company: "", seatsNeeded: "", centerId: "", notes: "" });
   const [done, setDone] = useState(false);
+  const [token, setToken] = useState("");
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const widgetBox = useRef<HTMLDivElement>(null);
+  const widgetId = useRef<string>();
 
   useEffect(() => {
     fetch("/api/centers/public").then((r) => r.json()).then(setCenters).catch(() => {});
   }, []);
 
+  // Explicit render so the widget also appears after client-side navigation,
+  // when the script is already loaded and would not scan the page again.
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || !widgetBox.current || widgetId.current) return;
+    if (!turnstileLoaded && !window.turnstile) return;
+    widgetId.current = window.turnstile!.render(widgetBox.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      callback: (t: string) => setToken(t),
+      "expired-callback": () => setToken(""),
+      "error-callback": () => setToken(""),
+    });
+  }, [turnstileLoaded]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const r = await fetch("/api/leads/public", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    if (r.ok) setDone(true);
-    else alert("Failed");
+    if (TURNSTILE_SITE_KEY && !token) {
+      alert("Please complete the verification check first.");
+      return;
+    }
+    const r = await fetch("/api/leads/public", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, turnstileToken: token }),
+    });
+    if (r.ok) {
+      setDone(true);
+      return;
+    }
+    // Tokens are single-use, so a retry needs a fresh one.
+    setToken("");
+    if (widgetId.current) window.turnstile?.reset(widgetId.current);
+    const data = await r.json().catch(() => ({}));
+    alert(data.error || "Failed");
   }
 
   if (done) {
@@ -62,6 +108,16 @@ export default function LeadForm() {
         <div><label className="label">Notes</label>
           <textarea className="input" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </div>
+        {TURNSTILE_SITE_KEY && (
+          <>
+            <Script
+              src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+              strategy="afterInteractive"
+              onReady={() => setTurnstileLoaded(true)}
+            />
+            <div ref={widgetBox} />
+          </>
+        )}
         <button className="btn-primary w-full">Submit Enquiry</button>
       </form>
     </div>
