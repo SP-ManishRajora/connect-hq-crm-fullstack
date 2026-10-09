@@ -68,13 +68,19 @@ function allowedOrigin(req: NextRequest): string | null {
 }
 
 function corsHeaders(origin: string | null): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
+  // navigator.sendBeacon always sends in credentials mode "include", and a JSON
+  // body makes it preflight — without this header the browser blocks every
+  // beacon. Only valid alongside a specific origin, never "*". Harmless here:
+  // this route reads no cookies, so credentials grant nothing.
+  if (origin && origin !== "*") headers["Access-Control-Allow-Credentials"] = "true";
+  return headers;
 }
 
 export async function OPTIONS(req: NextRequest) {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { LEAD_LOST } from "@/lib/leadStatus";
+import { isOldDataSource, isImportedSource, OLD_DATA_SOURCE, OLD_LEADS_SOURCE } from "@/lib/oldLeads";
 
 /*
  * The full lead funnel, from an ad click to a paying customer.
@@ -251,7 +252,11 @@ export async function getChannelFunnel(r: Range): Promise<ChannelRow[]> {
 
   const byChannel = new Map<string, ChannelRow>();
   for (const row of rows) {
-    const key = row.source || "Unknown";
+    // Imported sheet rows carry their enquiry date in the source; report them as
+    // two channels: untouched imports, and those since followed up.
+    const key = isImportedSource(row.source)
+      ? isOldDataSource(row.source) ? OLD_DATA_SOURCE : OLD_LEADS_SOURCE
+      : row.source || "Unknown";
     const entry = byChannel.get(key) ?? {
       channel: key,
       leads: 0,

@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { logAction } from "@/lib/audit";
 import { canTransition } from "@/lib/leadStatus";
+import { promotedSource } from "@/lib/oldLeads";
 
 // Roles allowed to edit or delete a lead. Sales can manage leads; managers/admins retain full access.
 const LEAD_WRITE_ROLES = ["ADMIN", "OWNER", "MANAGER", "SALES"] as const;
@@ -18,7 +19,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // Status changes are gated: the target must be a known status, and a comment is required.
   if (typeof b.status === "string") {
-    const existing = await prisma.lead.findUnique({ where: { id: params.id }, select: { status: true } });
+    const existing = await prisma.lead.findUnique({ where: { id: params.id }, select: { status: true, source: true } });
     if (!existing) return NextResponse.json({ error: "lead not found" }, { status: 404 });
 
     if (b.status !== existing.status) {
@@ -34,7 +35,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
 
       const [lead] = await prisma.$transaction([
-        prisma.lead.update({ where: { id: params.id }, data: { status: b.status } }),
+        // A status change is a follow-up: an imported lead leaves the Old Data tab.
+        prisma.lead.update({
+          where: { id: params.id },
+          data: { status: b.status, ...(promotedSource(existing.source) ? { source: promotedSource(existing.source)! } : {}) },
+        }),
         prisma.comment.create({
           data: {
             leadId: params.id,
@@ -62,10 +67,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const before = await prisma.lead.findUnique({ where: { id: params.id } });
   if (!before) return NextResponse.json({ error: "lead not found" }, { status: 404 });
 
-  const lead = await prisma.lead.update({ where: { id: params.id }, data: rest });
+  // Editing an imported lead also moves it to the main tab, unless the edit sets the source itself.
+  const promoted = rest.source === undefined ? promotedSource(before.source) : null;
+  const lead = await prisma.lead.update({ where: { id: params.id }, data: promoted ? { ...rest, source: promoted } : rest });
 
   const changed: Record<string, { from: unknown; to: unknown }> = {};
-  for (const key of Object.keys(rest)) {
+  for (const key of Object.keys(promoted ? { ...rest, source: promoted } : rest)) {
     const beforeVal = (before as Record<string, unknown>)[key];
     const afterVal = (lead as Record<string, unknown>)[key];
     if (beforeVal !== afterVal) changed[key] = { from: beforeVal, to: afterVal };

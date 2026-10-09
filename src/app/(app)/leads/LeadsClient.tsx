@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { allowedNextStatuses } from "@/lib/leadStatus";
 import PartnerPicker from "@/components/PartnerPicker";
 import { isValidIndianPhone, isValidEmail } from "@/lib/validators";
 import { fmtDate } from "@/lib/utils";
+import { isOldDataSource } from "@/lib/oldLeads";
 
 // WEBSITE_CALL leads are normally created from the Website Calls report, which
 // attaches the caller's campaign; listed here so a manual entry can use it too.
@@ -40,7 +41,39 @@ export default function LeadsClient({ initialLeads, centers, partners = [] }: an
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [stage, setStage] = useState("");
+  // "main" = live pipeline; "old" = imported spreadsheet rows nobody has followed up yet.
+  // A status change, edit or comment moves an imported lead to the main tab
+  // (its source becomes "Old Leads · <date>").
+  const [tab, setTab] = useState<"main" | "old">("main");
+
+  // Pick up the server's list after router.refresh() (new lead, import).
+  useEffect(() => setLeads(initialLeads), [initialLeads]);
   const [form, setForm] = useState<any>({ ...emptyForm });
+
+  // Bulk import of the old lead spreadsheet: preview (dry run) first, then commit.
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importPreview, setImportPreview] = useState<any>(null);
+  const [importResult, setImportResult] = useState<any>(null);
+
+  async function runImport(dryRun: boolean) {
+    if (!importFile) { alert("Choose a file"); return; }
+    setImportBusy(true);
+    const fd = new FormData();
+    fd.append("file", importFile);
+    if (dryRun) fd.append("dryRun", "1");
+    const r = await fetch("/api/leads/bulk-import", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    setImportBusy(false);
+    if (!r.ok) { alert(j.error || "Import failed"); return; }
+    if (dryRun) { setImportPreview(j); setImportResult(null); }
+    else { setImportResult(j); setImportPreview(null); setTab("old"); router.refresh(); }
+  }
+
+  function resetImport() {
+    setShowImport(false); setImportFile(null); setImportPreview(null); setImportResult(null);
+  }
 
   // Inline status-change UI: which lead is open, the chosen next status, and the required comment.
   const [editing, setEditing] = useState<string | null>(null);
@@ -75,7 +108,7 @@ export default function LeadsClient({ initialLeads, centers, partners = [] }: an
       setLeads((prev) =>
         prev.map((l) =>
           l.id === leadId
-            ? { ...l, status: updated.status, _count: { ...l._count, comments: (l._count?.comments || 0) + 1 } }
+            ? { ...l, status: updated.status, source: updated.source, _count: { ...l._count, comments: (l._count?.comments || 0) + 1 } }
             : l,
         ),
       );
@@ -114,12 +147,14 @@ export default function LeadsClient({ initialLeads, centers, partners = [] }: an
     }
   }
 
+  const oldCount = leads.filter((l) => isOldDataSource(l.source)).length;
   const filtered = leads.filter((l) => {
+    if (isOldDataSource(l.source) !== (tab === "old")) return false;
     if (stage && l.status !== stage) return false;
     if (statusFilter && l.status !== statusFilter) return false;
     if (filter) {
       const q = filter.toLowerCase();
-      return [l.name, l.phone, l.email, l.company].some((x) => (x || "").toLowerCase().includes(q));
+      return [l.name, l.phone, l.email, l.company, l.source].some((x) => (x || "").toLowerCase().includes(q));
     }
     return true;
   });
@@ -128,12 +163,138 @@ export default function LeadsClient({ initialLeads, centers, partners = [] }: an
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="h1">CRM / Leads</h1>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>+ New Lead</button>
+        <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => (showImport ? resetImport() : setShowImport(true))}>Import old data</button>
+          <button className="btn-primary" onClick={() => setShowForm(!showForm)}>+ New Lead</button>
+        </div>
       </div>
+
+      {showImport && (
+        <div className="card space-y-3">
+          <div>
+            <h2 className="font-semibold">Import old leads from Excel</h2>
+            <p className="muted text-sm">
+              Upload the lead workbook (.xlsx). Every sheet with <b>Client&apos;s Name</b> and <b>Mobile No.</b> / <b>Date</b> columns is read;
+              other sheets are skipped. Each lead is saved with source <b>Old Data · &lt;enquiry date&gt;</b> and listed in the <b>Old Lead</b> tab; remarks become comments,
+              and anything that doesn&apos;t fit a field is kept in notes. Uploading the same file again skips rows already imported.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              aria-label="Lead workbook"
+              onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportPreview(null); setImportResult(null); }}
+            />
+            <button className="btn-ghost disabled:opacity-50" disabled={!importFile || importBusy} onClick={() => runImport(true)}>
+              {importBusy && !importPreview ? "Reading…" : "Preview"}
+            </button>
+            {importPreview && importPreview.willCreate > 0 && (
+              <button className="btn-primary disabled:opacity-50" disabled={importBusy} onClick={() => runImport(false)}>
+                {importBusy ? "Importing…" : `Import ${importPreview.willCreate} leads`}
+              </button>
+            )}
+            <button className="btn-ghost" onClick={resetImport}>Close</button>
+          </div>
+
+          {(importPreview || importResult) && (() => {
+            const s = importResult || importPreview;
+            return (
+              <div className="text-sm space-y-2">
+                {importResult ? (
+                  <p className="font-medium text-teal-700">
+                    Imported {importResult.created} leads.{importResult.errorCount ? ` ${importResult.errorCount} rows failed.` : ""}
+                  </p>
+                ) : (
+                  <p className="font-medium">Will create {s.willCreate} leads.</p>
+                )}
+                <ul className="list-disc ml-5 text-gray-600">
+                  <li>{s.totalRows} lead rows read; {s.duplicatesInFile} duplicates inside the file; {s.alreadyImported} already imported earlier.</li>
+                  <li>
+                    By status:{" "}
+                    {Object.entries(s.byStatus || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "—"}
+                  </li>
+                  <li>{s.noPhone} without a valid mobile number; {s.noCenter} without a matching center.</li>
+                  {s.dateProblemCount > 0 && (
+                    <li>
+                      {s.dateProblemCount} with an unreadable or future date — imported with the date as written in the source, dated today:
+                      <span className="text-gray-500">
+                        {" "}{s.dateProblems.slice(0, 8).map((d: any) => `${d.name} (${d.sheet} row ${d.row}: ${d.date})`).join("; ")}
+                        {s.dateProblemCount > 8 ? "…" : ""}
+                      </span>
+                    </li>
+                  )}
+                  {s.skippedSheets?.length > 0 && (
+                    <li>Skipped sheets: {s.skippedSheets.map((x: any) => x.sheet).join(", ")}</li>
+                  )}
+                </ul>
+                {importResult?.errors?.length > 0 && (
+                  <ul className="text-rose-600 text-xs list-disc ml-5">
+                    {importResult.errors.slice(0, 10).map((e: any, i: number) => (
+                      <li key={i}>{e.sheet} row {e.row} ({e.name}): {e.error}</li>
+                    ))}
+                  </ul>
+                )}
+                {importPreview?.sample?.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="table text-xs">
+                      <thead><tr><th>Sheet / row</th><th>Name</th><th>Phone</th><th>Source</th><th>Status</th><th>Seats</th><th>Center</th></tr></thead>
+                      <tbody>
+                        {importPreview.sample.map((r: any, i: number) => (
+                          <tr key={i}>
+                            <td>{r.sheet} / {r.row}</td><td>{r.name}</td><td>{r.phone || "—"}</td><td>{r.source}</td>
+                            <td>{r.status}</td><td>{r.seats ?? "—"}{r.workspaceType ? ` (${r.workspaceType})` : ""}</td><td>{r.center || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       <div className="muted">
         Public web form leads land here automatically: <code className="bg-gray-100 px-1 rounded">/lead-form</code>. WhatsApp/call comments can be added per-lead.
       </div>
+
+      <div role="tablist" className="flex gap-1 border-b border-gray-200">
+        {([
+          ["main", "Lead", leads.length - oldCount],
+          ["old", "Old Lead", oldCount],
+        ] as const).map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`-mb-px rounded-t-lg border px-5 py-2 text-sm font-semibold transition ${
+              tab === key
+                ? "border-gray-200 border-b-white bg-white text-brand-600"
+                : "border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {label}
+            <span
+              className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+                tab === key ? "bg-brand-600 text-white" : "bg-white text-gray-500"
+              }`}
+            >
+              {count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "old" && (
+        <div className="muted text-sm">
+          Leads imported from the old spreadsheets. Once you change a lead&apos;s status, edit it or add a follow-up comment,
+          it moves to the Lead tab with source <b>Old Leads</b>.
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -237,7 +398,7 @@ export default function LeadsClient({ initialLeads, centers, partners = [] }: an
 
       <div className="card">
         <div className="flex flex-wrap gap-2 mb-3">
-          <input placeholder="Search name/phone/email/company" className="input max-w-sm" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <input placeholder="Search name/phone/email/company/source" className="input max-w-sm" value={filter} onChange={(e) => setFilter(e.target.value)} />
           <select className="input max-w-xs" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
             {STAGES.map((s) => <option key={s.status} value={s.status}>{s.label}</option>)}

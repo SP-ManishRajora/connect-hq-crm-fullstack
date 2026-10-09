@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
+import { promotedSource } from "@/lib/oldLeads";
 
 // Webhook-friendly: requires either session OR a header X-Webhook-Secret matching JWT_SECRET
 // (Use this for WhatsApp gateway → POST comments to a specific lead)
@@ -19,5 +20,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       authorId: u?.id,
     },
   });
+  // A follow-up note from staff moves an imported lead out of the Old Data tab.
+  // Webhook messages (WhatsApp gateway) do not: nobody has followed up yet.
+  if (u) {
+    const lead = await prisma.lead.findUnique({ where: { id: params.id }, select: { source: true } });
+    const promoted = promotedSource(lead?.source);
+    if (promoted) await prisma.lead.update({ where: { id: params.id }, data: { source: promoted } });
+  }
   return NextResponse.json(c);
 }
