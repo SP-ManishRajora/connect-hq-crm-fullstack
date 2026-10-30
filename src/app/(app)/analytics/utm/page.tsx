@@ -218,6 +218,8 @@ export default async function UtmPage({
           points={trend.points}
           series={trend.series}
           metric={metric}
+          // Must match the bucketing rule in getUtmTrend.
+          daily={range.days <= 45}
           labels={dim === "utmCampaign" ? campaignLabels(trend.series) : undefined}
         />
       </div>

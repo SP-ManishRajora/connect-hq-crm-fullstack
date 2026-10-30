@@ -53,25 +53,48 @@ const tooltipStyle = {
 };
 
 /**
- * Leads (or customers) over time, one line per dimension value.
+ * Leads (or customers) over time, one mark per dimension value.
  *
- * A line chart rather than stacked bars: the question is whether a campaign is
- * rising or decaying, and stacking makes each series' own shape unreadable.
+ * Daily buckets draw as grouped bars: at a few leads a month most days are
+ * zero, and a line between them invents slopes — half a lead on the day
+ * between a 0 and a 1. Weekly buckets are denser, so they keep a straight
+ * line with a dot on each real point. Neither stacks: stacking makes each
+ * series' own shape unreadable.
  */
 export function TrendChart({
   points,
   series,
   metric,
+  daily = false,
   labels = {},
 }: {
   points: Record<string, string | number>[];
   series: string[];
   metric: string;
+  /** True when each point is one day. */
+  daily?: boolean;
   /** Display names keyed by series value, e.g. campaign id → campaign name. */
   labels?: Record<string, string>;
 }) {
   if (!points.length || !series.length) {
     return <p className="muted text-sm">Not enough data to draw a trend.</p>;
+  }
+
+  if (daily) {
+    return (
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={points} margin={{ top: 5, right: 10, bottom: 5, left: -18 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+          <XAxis dataKey="period" tick={axis} tickLine={false} axisLine={{ stroke: "#e5e7eb" }} />
+          <YAxis tick={axis} tickLine={false} axisLine={false} allowDecimals={false} />
+          <Tooltip {...tooltipStyle} cursor={{ fill: "#f9fafb" }} formatter={(v: number, n: string) => [v, n]} />
+          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+          {series.map((s, i) => (
+            <Bar key={s} dataKey={s} name={labels[s] ?? s} fill={colourFor(i)} radius={[3, 3, 0, 0]} maxBarSize={18} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    );
   }
 
   return (
@@ -87,12 +110,12 @@ export function TrendChart({
         {series.map((s, i) => (
           <Line
             key={s}
-            type="monotone"
+            type="linear"
             dataKey={s}
             name={labels[s] ?? s}
             stroke={colourFor(i)}
             strokeWidth={2}
-            dot={false}
+            dot={{ r: 2.5 }}
             // Without this a series that is 0 for a week vanishes rather than
             // drawing along the axis.
             connectNulls
