@@ -15,6 +15,7 @@ import {
   type UtmDimension,
   type UtmFilters,
 } from "@/lib/analytics/utm";
+import { campaignLabel, campaignLabels } from "@/lib/analytics/campaignNames";
 import { TrendChart, BreakdownChart, ShareChart } from "./UtmCharts";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +91,9 @@ export default async function UtmPage({
     getUtmTrend(dim, range, { top: 5, metric }),
     getUtmCoverage(range),
   ]);
+
+  // Only campaigns have ids worth translating; links and filters keep the raw value.
+  const label = (v: string) => (dim === "utmCampaign" ? campaignLabel(v) : v);
 
   const base = { days: range.days, dim, metric, filters };
   const activeFilters = Object.entries(filters).filter(([, v]) => v);
@@ -173,7 +177,7 @@ export default async function UtmPage({
                 className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700 hover:bg-brand-100"
                 title="Remove this filter"
               >
-                {UTM_DIMENSIONS[k as UtmDimension].label}: {v} ✕
+                {UTM_DIMENSIONS[k as UtmDimension].label}: {k === "utmCampaign" ? campaignLabel(v) : v} ✕
               </Link>
             ))}
             <Link href={linkTo({ ...base, filters: {} }, {})} className="text-xs text-gray-500 underline">
@@ -208,8 +212,14 @@ export default async function UtmPage({
         <p className="muted text-xs mb-2">
           {range.days > 45 ? "Bucketed by week." : "Bucketed by day."} Shows whether a
           {" "}{UTM_DIMENSIONS[dim].label.toLowerCase()} is improving or decaying, not just its total.
+          {" "}Untagged “{NOT_SET}” and test leads are left out.
         </p>
-        <TrendChart points={trend.points} series={trend.series} metric={metric} />
+        <TrendChart
+          points={trend.points}
+          series={trend.series}
+          metric={metric}
+          labels={dim === "utmCampaign" ? campaignLabels(trend.series) : undefined}
+        />
       </div>
 
       {/* ── Breakdown chart + table ───────────────────────────────────────── */}
@@ -224,7 +234,7 @@ export default async function UtmPage({
           <p className="muted text-sm">No leads with this dimension in the selected range.</p>
         ) : (
           <>
-            <BreakdownChart rows={rows} />
+            <BreakdownChart rows={rows.map((r) => ({ ...r, value: label(r.value) }))} />
 
             <div className="overflow-x-auto mt-4">
               <table className="w-full text-sm">
@@ -248,8 +258,9 @@ export default async function UtmPage({
                         <Link
                           href={linkTo(base, { [dim]: r.raw ?? NOT_SET } as never)}
                           className="text-brand-600 hover:underline"
+                          title={label(r.value) !== r.value ? `Campaign id ${r.value}` : undefined}
                         >
-                          {r.value}
+                          {label(r.value)}
                         </Link>
                       </td>
                       <td className="py-2 text-right">{r.leads.toLocaleString("en-IN")}</td>

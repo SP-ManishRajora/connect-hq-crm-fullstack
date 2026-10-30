@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { canAccessAsync } from "@/lib/roles";
 import { fmtDateTime } from "@/lib/utils";
+import { campaignLabel } from "@/lib/analytics/campaignNames";
 import {
   rangeFromDays,
   getTotals,
@@ -147,7 +148,7 @@ export default async function AnalyticsPage({
             series over a short range, and a dependency would not earn itself. */}
         <div className="mt-4 flex items-end gap-[2px] h-32">
           {daily.map((d) => (
-            <div key={d.day} className="flex-1 flex flex-col justify-end items-center group relative">
+            <div key={d.day} className="flex-1 h-full flex flex-col justify-end items-center group relative">
               <div
                 className="w-full bg-brand-500 rounded-t min-h-[2px] group-hover:bg-brand-600"
                 style={{ height: `${(d.pageViews / maxDay) * 100}%` }}
@@ -174,6 +175,7 @@ export default async function AnalyticsPage({
         <p className="muted text-xs mb-3">
           Sessions are what the browser reported and are undercounted by ad-blockers.
           <strong> Leads</strong> is the number of rows in the CRM — that is the one to judge spend on.
+          {" "}Google Ads Lead Form leads never visit the site, so their campaigns show leads with no sessions.
         </p>
         {campaigns.length === 0 ? (
           <p className="muted text-sm">No campaign traffic in this range.</p>
@@ -193,7 +195,17 @@ export default async function AnalyticsPage({
               <tbody>
                 {campaigns.map((c) => (
                   <tr key={c.campaign} className="border-b last:border-0">
-                    <td className="py-2 font-medium break-all">{c.campaign}</td>
+                    <td className="py-2 font-medium break-all">
+                      {campaignLabel(c.campaign)}
+                      {c.leadFormLeads > 0 && (
+                        <span
+                          className="ml-2 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 whitespace-nowrap"
+                          title={`${c.leadFormLeads} of these leads came from a Google Ads Lead Form`}
+                        >
+                          Lead Form
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 text-gray-500">{c.source}</td>
                     <td className="py-2 text-right">{c.sessions.toLocaleString("en-IN")}</td>
                     <td className="py-2 text-right">{c.conversions.toLocaleString("en-IN")}</td>

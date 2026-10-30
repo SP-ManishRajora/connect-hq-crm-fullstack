@@ -110,6 +110,8 @@ export type CampaignRow = {
   conversions: number;
   /** Leads stored in the CRM attributed to this campaign. */
   leads: number;
+  /** Leads that came through a Google Ads Lead Form, which never visit the site. */
+  leadFormLeads: number;
 };
 
 /**
@@ -119,8 +121,15 @@ export type CampaignRow = {
  * lead_submit events, because a lead row is the thing that actually reached
  * sales. An ad-blocked visitor can still submit the form, so counting the
  * events would under-report exactly the number people care about.
+ *
+ * Campaigns that produced leads but no tracked sessions are appended. Google
+ * Ads Lead Form submissions go straight from the ad to the CRM without loading
+ * the website, so building rows from traffic alone left paid leads missing
+ * from the table entirely.
  */
 export async function getCampaigns(r: Range, limit = 12): Promise<CampaignRow[]> {
+  // No LIMIT here: campaigns are few, and the merge below needs to know every
+  // campaign that had traffic before deciding which ones had none.
   const traffic = await prisma.$queryRaw<
     { campaign: string | null; source: string | null; sessions: bigint; conversions: bigint }[]
   >`
@@ -130,19 +139,27 @@ export async function getCampaigns(r: Range, limit = 12): Promise<CampaignRow[]>
            SUM(name IN ('phone_click','whatsapp_click','lead_submit')) AS conversions
       FROM WebEvent
      WHERE occurredAt >= ${r.from} AND occurredAt <= ${r.to}
-     GROUP BY utmCampaign
-     ORDER BY sessions DESC
-     LIMIT ${limit}`;
+     GROUP BY utmCampaign`;
 
   const leadRows = await prisma.lead.groupBy({
-    by: ["utmCampaign"],
+    by: ["utmCampaign", "utmSource", "source"],
     where: { createdAt: { gte: r.from, lte: r.to } },
     _count: { _all: true },
   });
-  const leadsByCampaign = new Map(leadRows.map((l) => [l.utmCampaign ?? "", l._count._all]));
 
-  return traffic.map((t) => {
+  const leadsBy = new Map<string, { leads: number; leadForm: number; source: string | null }>();
+  for (const l of leadRows) {
+    const key = l.utmCampaign ?? "";
+    const e = leadsBy.get(key) ?? { leads: 0, leadForm: 0, source: null };
+    e.leads += l._count._all;
+    if (l.source === "GOOGLE_LEAD_FORM") e.leadForm += l._count._all;
+    e.source = e.source ?? l.utmSource;
+    leadsBy.set(key, e);
+  }
+
+  const rows: CampaignRow[] = traffic.map((t) => {
     const key = t.campaign ?? "";
+    const l = leadsBy.get(key);
     return {
       // Direct and organic visits have no campaign; name them rather than
       // showing a blank row.
@@ -150,9 +167,27 @@ export async function getCampaigns(r: Range, limit = 12): Promise<CampaignRow[]>
       source: t.source || "—",
       sessions: Number(t.sessions),
       conversions: Number(t.conversions),
-      leads: leadsByCampaign.get(key) ?? 0,
+      leads: l?.leads ?? 0,
+      leadFormLeads: l?.leadForm ?? 0,
     };
   });
+
+  const seen = new Set(traffic.map((t) => t.campaign ?? ""));
+  for (const [key, l] of leadsBy) {
+    if (seen.has(key)) continue;
+    rows.push({
+      campaign: key || "(direct / organic)",
+      source: l.source || "—",
+      sessions: 0,
+      conversions: 0,
+      leads: l.leads,
+      leadFormLeads: l.leadForm,
+    });
+  }
+
+  return rows
+    .sort((a, b) => b.leads - a.leads || b.sessions - a.sessions)
+    .slice(0, limit);
 }
 
 export type PageRow = { path: string; views: number; conversions: number };

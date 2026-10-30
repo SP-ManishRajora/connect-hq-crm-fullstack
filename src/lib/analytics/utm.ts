@@ -31,6 +31,19 @@ export type UtmDimension = keyof typeof UTM_DIMENSIONS;
 /** Shown in place of an absent dimension, and accepted as a filter value. */
 export const NOT_SET = "(not set)";
 
+/*
+ * utm_source used for test submissions (e.g. ?utm_source=test&utm_campaign=test_run).
+ * Left out of the trend so a QA run does not read as a campaign. MySQL's default
+ * collation makes the comparison case-insensitive.
+ *
+ * Written as "null OR not test" because NOT (utmSource = 'test') in SQL also
+ * drops every row where utmSource is NULL — i.e. all untagged leads.
+ */
+export const TEST_SOURCE = "test";
+const notTest: Prisma.LeadWhereInput = {
+  OR: [{ utmSource: null }, { utmSource: { not: TEST_SOURCE } }],
+};
+
 export function isUtmDimension(v: string | undefined | null): v is UtmDimension {
   return !!v && Object.prototype.hasOwnProperty.call(UTM_DIMENSIONS, v);
 }
@@ -67,8 +80,12 @@ export async function getUtmBreakdown(
   r: Range,
   filters: UtmFilters = {},
   limit = 25,
+  excludeTest = false,
 ): Promise<UtmRow[]> {
-  const where: Prisma.LeadWhereInput = { createdAt: { gte: r.from, lte: r.to } };
+  const where: Prisma.LeadWhereInput = {
+    createdAt: { gte: r.from, lte: r.to },
+    ...(excludeTest ? notTest : {}),
+  };
   for (const [k, v] of Object.entries(filters)) {
     if (!v) continue;
     // "(not set)" in a filter means "rows where this dimension is missing",
@@ -192,6 +209,10 @@ export type TrendResult = {
  * daily points across five campaigns is unreadable, and a quarter of daily
  * points is worse. Empty buckets are filled with zeroes so a gap in a campaign
  * draws as a drop rather than the line jumping over it.
+ *
+ * "(not set)" and test leads are left out. Untagged leads are most of the flow,
+ * so drawing them sets the y-axis and flattens every real campaign into the
+ * baseline; the coverage banner and breakdown table still report them.
  */
 export async function getUtmTrend(
   dimension: UtmDimension,
@@ -202,9 +223,12 @@ export async function getUtmTrend(
   const metric = opts.metric ?? "leads";
 
   // Which values are worth drawing. Everything else would be a hairball.
-  const leaders = await getUtmBreakdown(dimension, r, {}, top);
+  // Fetched one wider than `top` so dropping "(not set)" still leaves `top`.
+  const leaders = await getUtmBreakdown(dimension, r, {}, top + 1, true);
   const series = leaders
+    .filter((l) => l.raw !== null)
     .filter((l) => (metric === "customers" ? l.customers > 0 : l.leads > 0))
+    .slice(0, top)
     .map((l) => l.value);
 
   if (!series.length) return { points: [], series: [] };
@@ -227,6 +251,8 @@ export async function getUtmTrend(
              : Prisma.sql`COUNT(*)`} AS n
       FROM \`Lead\`
      WHERE createdAt >= ${r.from} AND createdAt <= ${r.to}
+       AND ${col} IS NOT NULL
+       AND (utmSource IS NULL OR utmSource <> ${TEST_SOURCE})
      GROUP BY period, k
      ORDER BY period`;
 

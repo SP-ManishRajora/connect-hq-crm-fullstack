@@ -62,10 +62,13 @@ export function TrendChart({
   points,
   series,
   metric,
+  labels = {},
 }: {
   points: Record<string, string | number>[];
   series: string[];
   metric: string;
+  /** Display names keyed by series value, e.g. campaign id → campaign name. */
+  labels?: Record<string, string>;
 }) {
   if (!points.length || !series.length) {
     return <p className="muted text-sm">Not enough data to draw a trend.</p>;
@@ -86,7 +89,7 @@ export function TrendChart({
             key={s}
             type="monotone"
             dataKey={s}
-            name={s}
+            name={labels[s] ?? s}
             stroke={colourFor(i)}
             strokeWidth={2}
             dot={false}

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { canAccessAsync } from "@/lib/roles";
 import { fmtINR } from "@/lib/utils";
+import { campaignLabel } from "@/lib/analytics/campaignNames";
 import { rangeFromDays } from "@/lib/analytics/report";
 import {
   getFunnelCounts,
@@ -238,7 +239,7 @@ export default async function FunnelPage({
               <tbody>
                 {campaigns.map((c) => (
                   <tr key={c.campaign} className="border-b last:border-0">
-                    <td className="py-2 font-medium break-all">{c.campaign}</td>
+                    <td className="py-2 font-medium break-all">{campaignLabel(c.campaign)}</td>
                     <td className="py-2 text-gray-500">{c.source}</td>
                     <td className="py-2 text-right">{c.leads.toLocaleString("en-IN")}</td>
                     <td className="py-2 text-right">{c.qualified.toLocaleString("en-IN")}</td>

@@ -15,15 +15,24 @@ import { createHash } from "crypto";
  * gRPC stack, and we make exactly one kind of call. The auth library is already
  * present as a dependency of the GA4 client.
  *
- * Nothing here runs in the browser: the refresh token and developer token are
+ * Nothing here runs in the browser: the refresh token and client secret are
  * server-only and would be catastrophic to ship to a client bundle.
+ *
+ * Access is granted to the Google Cloud project that owns the OAuth client
+ * (Test / Explorer / Basic, managed under Google Ads API in Cloud Console). The
+ * developer token from API Center is no longer needed: Google ignores it and
+ * plans to reject it in a future version, so it is sent only if still set.
+ *
+ * Versions are retired roughly a year after release — check
+ * https://developers.google.com/google-ads/api/docs/sunset-dates when bumping.
  */
 
-const ADS_API_VERSION = "v18";
+const ADS_API_VERSION = "v26";
 
 export type AdsConfig = {
   customerId: string;       // the account conversions belong to, digits only
   loginCustomerId: string;  // the MCC/manager account, digits only; may equal customerId
+  /** Legacy and optional; empty when access comes from the Cloud project. */
   developerToken: string;
   clientId: string;
   clientSecret: string;
@@ -42,13 +51,13 @@ export function getAdsConfig(): AdsConfig | null {
   const digits = (v: string | undefined) => (v ?? "").replace(/[^0-9]/g, "");
 
   const customerId = digits(process.env.GOOGLE_ADS_CUSTOMER_ID);
-  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim();
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim() ?? "";
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.trim();
   const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.trim();
   const conversionActionId = digits(process.env.GOOGLE_ADS_CONVERSION_ACTION_ID);
 
-  if (!customerId || !developerToken || !clientId || !clientSecret || !refreshToken) return null;
+  if (!customerId || !clientId || !clientSecret || !refreshToken) return null;
   if (!conversionActionId) return null;
 
   // A single (non-manager) account manages itself.
@@ -235,7 +244,7 @@ export async function uploadConversions(
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "developer-token": cfg.developerToken,
+        ...(cfg.developerToken ? { "developer-token": cfg.developerToken } : {}),
         "login-customer-id": cfg.loginCustomerId,
         "Content-Type": "application/json",
       },
@@ -292,8 +301,8 @@ export async function uploadConversions(
 export function explainAdsError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
 
-  if (/DEVELOPER_TOKEN_NOT_APPROVED|developer token/i.test(msg)) {
-    return "The developer token is not approved for this account. Basic access is required before live uploads — check the API Center in your Google Ads manager account.";
+  if (/DEVELOPER_TOKEN_NOT_APPROVED|developer token|access level|SERVICE_DISABLED/i.test(msg)) {
+    return "The Google Cloud project behind GOOGLE_ADS_CLIENT_ID does not have production access. In Cloud Console, open Google Ads API → Access levels: it must be Explorer or above, and the API must be enabled.";
   }
   if (/CUSTOMER_NOT_FOUND|USER_PERMISSION_DENIED|PERMISSION_DENIED/i.test(msg)) {
     return "Google refused access to that account. Check GOOGLE_ADS_CUSTOMER_ID is the conversion account (digits only) and that GOOGLE_ADS_LOGIN_CUSTOMER_ID is the manager account above it.";
